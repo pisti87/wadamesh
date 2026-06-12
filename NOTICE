@@ -44,5 +44,21 @@ Noto Color Emoji (emoji glyph artwork, baked to image data)
     SIL Open Font License 1.1 — https://github.com/googlefonts/noto-emoji
     Used as bundled image data with attribution.
 
+ed25519 (bundled in lib/ed25519)
+    Orson Peters / orlp — public domain (Creative Commons Zero / zlib)
+    https://github.com/orlp/ed25519
+
+AsyncElegantOTA (vendored in arch/esp32/AsyncElegantOTA)
+    Copyright (c) Ayush Sharma — MIT License
+
+TFT_eSPI (Heltec V4 display backend)
+    Copyright (c) Bodmer — MIT / FreeBSD License — https://github.com/Bodmer/TFT_eSPI
+
+Adafruit GFX / ST7735_ST7789 (T-Deck display backend)
+    Copyright (c) Adafruit Industries — BSD License
+
+chsc6x (Heltec V4 CHSC6x cap-touch driver)
+    Quency-D — https://github.com/Quency-D/chsc6x
+
 This list is not exhaustive and is expanded as dependencies are vendored or
-added (e.g. board/display/touch drivers and their respective licenses).
+added.

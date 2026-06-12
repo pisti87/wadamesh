@@ -8,13 +8,34 @@ An LVGL touch UI — map, chat, contacts, channels, settings — split out of
 [meshcomod](https://github.com/ALLFATHER-BV/meshcomod). The app depends on a
 MeshCore fork via PlatformIO `lib_deps`.
 
-> 🚧 **Early scaffold.** The split from meshcomod is in progress; build envs and
-> source land here incrementally (one topic at a time).
-
 ## Boards
 
-- LilyGo T-Deck / T-Deck Plus
-- Heltec V4 + TFT + CHSC6x touch
+- LilyGo T-Deck / T-Deck Plus — env `LilyGo_TDeck_companion_radio_touch`
+- Heltec V4 + TFT + CHSC6x touch — env `heltec_v4_tft_companion_radio_usb_tcp_touch`
+
+## Architecture
+
+This repo holds only the **app**: the `companion_radio` glue, the `ui-touch`
+LVGL UI, the two boards' glue/variants, and `platformio.ini`. The **MeshCore
+core is not vendored here** — it's pulled as a library via `lib_deps` from the
+fork [`ALLFATHER-BV/MeshCore`](https://github.com/ALLFATHER-BV/MeshCore) (a clean
+fork of meshcore-dev/MeshCore), pinned by git tag. The build is byte-identical to
+the original in-tree meshcomod firmware.
+
+## Build
+
+[PlatformIO](https://platformio.org/) pulls the core fork and all libraries
+automatically:
+
+```bash
+pio run -e heltec_v4_tft_companion_radio_usb_tcp_touch   # Heltec V4 TFT
+pio run -e LilyGo_TDeck_companion_radio_touch            # LilyGo T-Deck
+# or just `pio run` to build both
+```
+
+Flash with the NVS-preserving 4-component chain (bootloader / partitions /
+boot_app0 / firmware at `0x0 / 0x8000 / 0xe000 / 0x10000`) so saved Wi-Fi
+credentials survive — not a merged image, which 0xFF-pads and wipes NVS.
 
 ## Contributing
 

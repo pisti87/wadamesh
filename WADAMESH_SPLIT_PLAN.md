@@ -1,8 +1,29 @@
 # wadamesh — split plan
 
-**Status: planning.** No firmware code has moved yet. This file is the tracked
-roadmap for splitting the LVGL touch-UI firmware out of
+**Status: executed ✅ — both boards build green from the published fork and the
+T-Deck is flash-verified on hardware.** This file is the tracked roadmap for the
+split of the LVGL touch-UI firmware out of
 [meshcomod](https://github.com/ALLFATHER-BV/meshcomod) into **wadamesh**.
+
+## Done
+
+- `ALLFATHER-BV/MeshCore` — `wada` branch + tag `v1.16.0-wada.0` = the core (MIT;
+  `main` tracks upstream). Build-first: carries the full meshcomod core for now.
+- `ALLFATHER-BV/wadamesh` — both touch boards build as their own project,
+  pulling the core via `lib_deps @ git tag`. No core vendored here.
+- **Byte-identical to meshcomod** (delta = build-path strings only): V4 0.05%,
+  T-Deck 0.08%. T-Deck flash-verified on hardware — boots + runs from the split.
+- Two fixes were all it took: `build_as_lib.py` compiles `helpers/input/`; the
+  bundled `ed25519` lib travels with the project.
+
+## Remaining (non-blocking)
+
+- **Minimize the fork** toward the upstreamable Wi-Fi/BLE/UI hook set (~516
+  lines), shrinking the `wada` diff vs upstream — the "clean fork" end state.
+- **Re-home the release pipeline** to wadamesh (tagged bins as GitHub Release
+  assets, not 1.2 GB in-tree; on-device OTA + flasher + wadamesh.com).
+- Optional polish: dedupe the two envs' shared flags into a common base; prune
+  unused `boards/*.json`.
 
 ## Goal
 
