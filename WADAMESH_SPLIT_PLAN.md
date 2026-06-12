@@ -13,13 +13,17 @@ split of the LVGL touch-UI firmware out of
   pulling the core via `lib_deps @ git tag`. No core vendored here.
 - **Byte-identical to meshcomod** (delta = build-path strings only): V4 0.05%,
   T-Deck 0.08%. T-Deck flash-verified on hardware — boots + runs from the split.
-- Two fixes were all it took: `build_as_lib.py` compiles `helpers/input/`; the
-  bundled `ed25519` lib travels with the project.
+- Two fixes were all it took for the build-first split: `build_as_lib.py`
+  compiles `helpers/input/`; the bundled `ed25519` lib travels with the project.
+- **Fork minimized ✅ (tag `v1.16.0-wada.1`).** The 26 touch/app additions (touch
+  HW drivers, prefs/SD helpers, companion transport servers, HTTP-OTA helpers,
+  LVGL allocator, touch diag) were relocated to wadamesh; only 3 transport-header
+  includes needed fixing. The fork's diff vs upstream dropped **52 files / ~4.2k
+  insertions → 24 files / ~1.7k** — just the modified-core hooks. Both boards
+  still build green + size-identical from the published tag.
 
 ## Remaining (non-blocking)
 
-- **Minimize the fork** toward the upstreamable Wi-Fi/BLE/UI hook set (~516
-  lines), shrinking the `wada` diff vs upstream — the "clean fork" end state.
 - **Re-home the release pipeline** to wadamesh (tagged bins as GitHub Release
   assets, not 1.2 GB in-tree; on-device OTA + flasher + wadamesh.com).
 - Optional polish: dedupe the two envs' shared flags into a common base; prune
