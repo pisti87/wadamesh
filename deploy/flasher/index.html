@@ -4,52 +4,53 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>wadamesh — install</title>
+<link rel="icon" href="https://wadamesh.com/wadamesh-badge.svg">
+<meta name="theme-color" content="#ffffff">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
 <script>
-  // Web Serial needs a secure context. "Always Use HTTPS" is off zone-wide (the
-  // firmware fetches tiles/updates over HTTP), so self-upgrade just this page.
   if (location.protocol === 'http:') location.replace(location.href.replace(/^http:/, 'https:'));
 </script>
 <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    background: radial-gradient(1200px 600px at 50% -10%, #16263a, #0b1118 60%); color: #e6edf3;
-    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
-  }
-  header { text-align: center; padding: 48px 20px 8px; }
-  h1 { margin: 0; font-size: 2.4rem; letter-spacing: -0.5px; }
-  h1 .dot { color: #4aa3ff; }
-  .tag { color: #8b98a5; margin-top: 6px; }
-  main { width: 100%; max-width: 720px; padding: 24px 20px 64px; }
-  .cards { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
-  @media (max-width: 560px) { .cards { grid-template-columns: 1fr; } }
-  .card {
-    background: #111b26; border: 1px solid #1f2c3a; border-radius: 14px; padding: 22px;
-    display: flex; flex-direction: column; gap: 12px; align-items: flex-start;
-  }
-  .card h2 { margin: 0; font-size: 1.15rem; }
-  .card p { margin: 0; color: #8b98a5; font-size: 0.92rem; }
-  esp-web-install-button { --esp-tools-button-color: #fff; --esp-tools-button-text-color: #0b1118; }
-  esp-web-install-button[install-supported] { width: 100%; }
-  button.fallback {
-    background: #4aa3ff; color: #06101c; border: 0; border-radius: 8px; padding: 10px 16px;
-    font-weight: 600; cursor: pointer;
-  }
-  .note { margin-top: 28px; padding: 16px 18px; background: #0f1620; border: 1px solid #1f2c3a; border-radius: 12px; color: #aab6c2; font-size: 0.9rem; }
-  .note b { color: #e6edf3; }
-  a { color: #4aa3ff; }
-  footer { color: #5f6b78; font-size: 0.85rem; padding: 0 20px 40px; text-align: center; }
-  .unsupported { display: none; color: #ffb454; }
-  .no-serial .unsupported { display: block; }
-  .no-serial esp-web-install-button { display: none; }
+  :root{--bg:#fff;--bg2:#f4f6f2;--ink:#15181e;--mut:#5d6770;--line:#e5e8e2;--teal:#15b6a6;--teal-ink:#0e8d80;color-scheme:light}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:-25% -10% auto -10%;height:60vh;z-index:-1;
+    background:radial-gradient(44vw 36vh at 50% 0%, rgba(25,214,194,.14), transparent 62%)}
+  header{text-align:center;padding:56px 20px 6px}
+  .logo{width:min(360px,80vw);height:auto;display:block;margin:0 auto}
+  .tag{color:var(--mut);margin-top:14px}
+  main{width:100%;max-width:720px;padding:24px 20px 60px}
+  .cards{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+  @media(max-width:560px){.cards{grid-template-columns:1fr}}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;display:flex;flex-direction:column;
+    gap:12px;align-items:flex-start;box-shadow:0 10px 30px -24px rgba(21,24,30,.6)}
+  .card h2{margin:0;font-size:1.15rem}
+  .card p{margin:0;color:var(--mut);font-size:.9rem}
+  esp-web-install-button{--esp-tools-button-color:var(--teal);--esp-tools-button-text-color:#fff}
+  .note{margin-top:26px;padding:16px 18px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;color:#46525c;font-size:.9rem}
+  .note b{color:var(--ink)}
+  a{color:var(--teal-ink)}
+  footer{color:var(--mut);font-size:.85rem;padding:0 20px 40px;text-align:center}
+  .unsupported{display:none;color:#b4631a}
+  body.no-serial .unsupported{display:block}
+  body.no-serial esp-web-install-button{display:none}
 </style>
 </head>
 <body>
 <header>
-  <h1>wada<span class="dot">·</span>mesh</h1>
-  <div class="tag">Touch-UI MeshCore firmware — install over USB, right from your browser.</div>
+  <svg class="logo" viewBox="0 0 720 140" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="wadamesh">
+    <g transform="translate(0 10)">
+      <path d="M10 60 L50 108 L90 60 L130 108 L170 60" stroke="#15181E" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M10 60 L50 12 L90 60 L130 12 L170 60" stroke="#15181E" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <g fill="#15B6A6"><circle cx="10" cy="60" r="7.5"/><circle cx="90" cy="60" r="7.5"/><circle cx="170" cy="60" r="7.5"/><circle cx="50" cy="12" r="7.5"/><circle cx="130" cy="12" r="7.5"/><circle cx="50" cy="108" r="7.5"/><circle cx="130" cy="108" r="7.5"/></g>
+    </g>
+    <text x="225" y="92" font-family="'JetBrains Mono','Courier New',monospace" font-weight="700" font-size="62" letter-spacing="6" fill="#15181E">WADA<tspan fill="#15B6A6">MESH</tspan></text>
+  </svg>
+  <div class="tag">Install over USB, right from your browser.</div>
 </header>
 <main>
   <div class="cards">
@@ -66,19 +67,14 @@
       <span class="unsupported">Use Chrome or Edge on desktop (Web Serial).</span>
     </div>
   </div>
-
   <div class="note">
-    <b>How it works:</b> plug the device in over USB, click <b>Connect</b>, pick the serial
-    port, and let it flash. This installs the <b>full image</b> (a clean install — it erases
-    the device). On a T-Deck, hold the trackball while tapping reset if it doesn't enter
-    download mode on its own. Works in <b>Chrome / Edge on desktop</b>.
+    <b>How it works:</b> plug the device in over USB, click <b>Connect</b>, pick the serial port,
+    and let it flash — a clean full install. On a T-Deck, hold the trackball while tapping reset if it
+    doesn't enter download mode on its own. Works in <b>Chrome / Edge on desktop</b>. Want the guided
+    version (incl. running under bmorcelli's Launcher)? See <a href="https://wadamesh.com">wadamesh.com</a>.
   </div>
 </main>
-<footer>
-  Open source (GPL-3.0) · <a href="https://github.com/ALLFATHER-BV/wadamesh">github.com/ALLFATHER-BV/wadamesh</a>
-</footer>
-<script>
-  if (!('serial' in navigator)) document.body.classList.add('no-serial');
-</script>
+<footer>Open source (GPL-3.0) · <a href="https://github.com/ALLFATHER-BV/wadamesh">github.com/ALLFATHER-BV/wadamesh</a></footer>
+<script>if (!('serial' in navigator)) document.body.classList.add('no-serial');</script>
 </body>
 </html>
