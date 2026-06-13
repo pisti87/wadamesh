@@ -1,4 +1,11 @@
-# wadamesh
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/wadamesh-readme-dark.svg">
+    <img alt="WADAMESH" src="assets/wadamesh-readme-light.svg" width="440">
+  </picture>
+</p>
+
+<p align="center"><b>A real touchscreen UI for your mesh radio.</b> &middot; open source &middot; GPL-3.0</p>
 
 Touch-UI [MeshCore](https://github.com/meshcore-dev/MeshCore) companion-radio
 firmware for the **LilyGo T-Deck / T-Deck Plus** and **Heltec V4 + TFT**
@@ -18,7 +25,7 @@ MeshCore fork via PlatformIO `lib_deps`.
 This repo holds only the **app**: the `companion_radio` glue, the `ui-touch`
 LVGL UI, the two boards' glue/variants, and `platformio.ini`. The **MeshCore
 core is not vendored here** — it's pulled as a library via `lib_deps` from the
-fork [`ALLFATHER-BV/MeshCore`](https://github.com/ALLFATHER-BV/MeshCore) (a clean
+fork [`ALLFATHER-BV/meshcomod-core`](https://github.com/ALLFATHER-BV/meshcomod-core) (a clean
 fork of meshcore-dev/MeshCore), pinned by git tag. The build is byte-identical to
 the original in-tree meshcomod firmware.
 
