@@ -118,6 +118,24 @@
 
   footer{border-top:1px solid var(--line); margin-top:48px; padding:30px 0 56px; text-align:center; color:var(--mut); font-size:.86rem}
   footer a{color:var(--teal-ink)}
+  .legal-links{margin-top:12px}
+  .legal-links a{color:var(--mut); cursor:pointer; margin:0 7px}
+  .legal-links a:hover{color:var(--teal-ink)}
+  .copyline{margin-top:8px; font-size:.82rem; color:var(--mut)}
+  .legal-ov{position:fixed; inset:0; background:rgba(21,24,30,.5); display:none; align-items:center; justify-content:center; z-index:60; padding:20px}
+  .legal-ov.show{display:flex}
+  .legal-modal{background:#fff; border:1px solid var(--line); border-radius:16px; max-width:640px; width:100%; max-height:84vh; display:flex; flex-direction:column; box-shadow:0 30px 80px -30px rgba(21,24,30,.55); text-align:left}
+  .legal-modal .mh{display:flex; align-items:center; justify-content:space-between; padding:17px 22px; border-bottom:1px solid var(--line)}
+  .legal-modal .mh h2{font-size:1.2rem}
+  .legal-modal .x{background:none; border:0; font-size:1.6rem; line-height:1; color:var(--mut); cursor:pointer}
+  .legal-modal .mb{padding:20px 22px; overflow-y:auto; color:#3a444d; font-size:.9rem; line-height:1.6; white-space:pre-wrap}
+  .cookiebar{position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:55; display:none;
+    align-items:center; gap:14px; flex-wrap:wrap; justify-content:center; width:min(700px,calc(100% - 28px));
+    background:#fff; border:1px solid var(--line); border-radius:14px; padding:13px 18px;
+    box-shadow:0 20px 50px -18px rgba(21,24,30,.4); font-size:.86rem; color:#3a444d; text-align:left}
+  .cookiebar.show{display:flex}
+  .cookiebar a{color:var(--teal-ink); cursor:pointer}
+  .cookiebar button{background:var(--teal); color:#fff; border:0; border-radius:8px; padding:8px 16px; font-weight:650; cursor:pointer; font-size:.86rem; flex:none}
 </style>
 </head>
 <body>
@@ -220,8 +238,22 @@
     Built for the mesh · open source under GPL-3.0 ·
     <a href="https://github.com/ALLFATHER-BV/wadamesh">github.com/ALLFATHER-BV/wadamesh</a><br>
     Map tiles © OpenStreetMap contributors. Not affiliated with bmorcelli's Launcher.
+    <div class="legal-links"><a data-legal="privacy">Privacy</a>·<a data-legal="cookies">Cookies</a>·<a data-legal="terms">Terms</a></div>
+    <div class="copyline">© 2026 ALLFATHER BV · Boutersem, Belgium · hey@allfather.io</div>
   </div>
 </footer>
+
+<div class="legal-ov" id="legalOv" aria-hidden="true">
+  <div class="legal-modal" role="dialog" aria-modal="true">
+    <div class="mh"><h2 id="legalTitle">Privacy</h2><button class="x" id="legalX" aria-label="Close">×</button></div>
+    <div class="mb" id="legalBody"></div>
+  </div>
+</div>
+
+<div class="cookiebar" id="cookiebar">
+  <span>This site uses only <b>essential cookies</b> (via Cloudflare) to stay secure and online — no tracking, no analytics. <a data-legal="cookies">Cookie&nbsp;Policy</a></span>
+  <button id="cookieok">Got it</button>
+</div>
 
 <script>
   if (!('serial' in navigator)) document.body.classList.add('no-serial');
@@ -253,6 +285,53 @@
     e.stopPropagation();
   }));
   document.addEventListener('click', () => document.querySelectorAll('.pill').forEach(p => p.classList.remove('open')));
+
+  // ---- legal (Privacy / Cookies / Terms) + essential-cookie notice ----
+  const LEGAL = {
+    privacy: { t:'Privacy Policy', c:
+`Effective: June 13, 2026
+
+This Privacy Policy describes how ALLFATHER BV ("we", "us") processes personal data when you use the wadamesh website and Web Flasher at wadamesh.com (the "Site"). We act as the data controller under the GDPR.
+
+Company & Contact — ALLFATHER BV — KBO/Company No. BE 0791.469.718, Bijvoordestraat 3, 3370 Boutersem, Belgium. Contact: hey@allfather.io.
+
+What We Collect — The Site runs primarily in your browser. The Web Flasher fetches firmware over HTTPS from our servers (firmware.wadamesh.com) and flashes it to your device via Web Serial — the flashing happens directly between your browser and your hardware. We do not collect account data or personal identifiers. Our servers and CDN/security provider (Cloudflare) may process technical and log data such as your IP address and timestamps for security and operation, on the basis of legitimate interests (Art. 6(1)(f)). The Site also loads web fonts from Google Fonts and a script library (esp-web-tools) from a public CDN; to deliver those resources your IP address is transmitted to those providers. The firmware's map feature fetches tiles via our proxy from OpenStreetMap.
+
+Purposes & Legal Bases — Providing the Site (downloads, flashing, information): necessary to offer the service. Security and integrity: legitimate interests (Art. 6(1)(f)). Legal obligations: compliance with law (Art. 6(1)(c)).
+
+Your Rights — Under the GDPR you have rights to access, rectify, erase, restrict, object to processing, and data portability. Exercise them by emailing hey@allfather.io. You can lodge a complaint with the Belgian Data Protection Authority (GBA): gegevensbeschermingsautoriteit.be.
+
+Changes — We may update this Policy and will post a new effective date where appropriate.` },
+    cookies: { t:'Cookie Policy', c:
+`Effective: June 13, 2026
+
+This Cookie Policy explains how the wadamesh website and Web Flasher, operated by ALLFATHER BV, use cookies and similar technologies.
+
+We use no tracking, analytics, or advertising cookies. Our CDN and security provider (Cloudflare) may set strictly-necessary cookies to keep the Site secure and available; these do not profile you or track you across other sites. We store your acceptance of the cookie notice in your browser's local storage so we don't ask again. That's it — no profiling.` },
+    terms: { t:'Terms of Service', c:
+`These Terms of Service ("Terms") govern your access to and use of the wadamesh website and Web Flasher (the "Tools"), operated by ALLFATHER BV ("we", "us"). By using the Tools, you agree to these Terms.
+
+1. Company — ALLFATHER BV — KBO/Company No. BE 0791.469.718, Bijvoordestraat 3, 3370 Boutersem, Belgium. Contact: hey@allfather.io.
+
+2. Use — The Web Flasher flashes wadamesh firmware onto compatible LilyGo T-Deck and Heltec V4 devices via Web Serial. You must have the right to operate your device. wadamesh is open-source firmware licensed under GPL-3.0; the firmware itself is provided without warranty (see its LICENSE).
+
+3. Disclaimer & Liability — The Tools are provided "as is" and "as available" without warranties of any kind. Flashing firmware may overwrite device data and settings. Use at your own risk. To the fullest extent permitted by law, we exclude implied warranties and limit liability to direct losses only. Nothing limits liability for intentional misconduct, gross negligence, death or personal injury caused by negligence, or other liability that cannot be excluded under applicable law.
+
+4. Privacy — Our Privacy Policy explains how we process personal data and your rights.
+
+5. Changes — We may update these Terms for legal, technical, or operational reasons. Continued use after changes signifies acceptance.
+
+6. Governing Law — Belgian law governs these Terms. Disputes are subject to the courts of Leuven, Belgium, unless local mandatory law provides otherwise.` },
+  };
+  const lov = document.getElementById('legalOv');
+  function openLegal(k){ const d = LEGAL[k]; if(!d) return; document.getElementById('legalTitle').textContent = d.t; document.getElementById('legalBody').textContent = d.c; lov.classList.add('show'); }
+  document.querySelectorAll('[data-legal]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); openLegal(a.dataset.legal); }));
+  document.getElementById('legalX').addEventListener('click', () => lov.classList.remove('show'));
+  lov.addEventListener('click', e => { if (e.target === lov) lov.classList.remove('show'); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') lov.classList.remove('show'); });
+  const cbar = document.getElementById('cookiebar');
+  try { if (!localStorage.getItem('wm-cookie-ack')) cbar.classList.add('show'); } catch(_) {}
+  document.getElementById('cookieok').addEventListener('click', () => { cbar.classList.remove('show'); try { localStorage.setItem('wm-cookie-ack','1'); } catch(_) {} });
 
   // subtle mesh backdrop (teal on white)
   const cv = document.querySelector('.mesh'), cx = cv.getContext('2d');
