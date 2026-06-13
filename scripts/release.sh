@@ -14,7 +14,7 @@ TAG="${1:?usage: release.sh <tag>  e.g. beta_2}"
 PIO="${PIO:-$HOME/Library/Python/3.9/bin/pio}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/out/firmware"                       # local mirror of the VPS firmware root
-REL="$OUT/releases/TOUCH"
+REL="$OUT/releases/TOUCH"; LATEST="$OUT/latest"
 DEST="${WADAMESH_VPS:-}"; DEST_PATH="${WADAMESH_VPS_PATH:-/srv/wadamesh/firmware}"
 
 # env:binname pairs — plain string form (works on macOS's bash 3.2; no associative arrays)
@@ -25,7 +25,7 @@ if [ -n "$DEST" ]; then
   mkdir -p "$OUT"
   rsync -a "$DEST:$DEST_PATH/" "$OUT/" 2>/dev/null || echo "note: first publish (nothing to pull yet)"
 fi
-mkdir -p "$REL/$TAG"
+mkdir -p "$REL/$TAG" "$LATEST"
 
 # 2. Build both boards (app + merged), tag + version embedded.
 export PLATFORMIO_BUILD_FLAGS="-DFIRMWARE_RELEASE_TAG='\"${TAG}\"' -DFIRMWARE_VERSION='\"wadamesh ${TAG}\"'"
@@ -34,6 +34,7 @@ for pair in $ENVS; do
   "$PIO" run -t mergebin -e "$env"
   cp ".pio/build/$env/firmware.bin"        "$REL/$TAG/$name.bin"
   cp ".pio/build/$env/firmware-merged.bin" "$REL/$TAG/$name-merged.bin"
+  cp ".pio/build/$env/firmware-merged.bin" "$LATEST/$name-merged.bin"   # rolling latest -> web flasher
 done
 
 # 3. Regenerate the update-check listing (the firmware scans the body for the

@@ -52,14 +52,19 @@ The on-device check GETs `http://firmware.wadamesh.com/releases/TOUCH`, finds th
 highest `beta_<N>`, and (once OTA-over-Wi-Fi is re-enabled) pulls
 `…/releases/TOUCH/beta_<N>/<board>.bin`.
 
+## Done
+
+- **Web flasher** ✅ at `flasher.wadamesh.com` — `deploy/flasher/` (esp-web-tools /
+  Web Serial, board picker, manifests pointing at the rolling `/latest/` merged
+  bins; `release.sh` refreshes `/latest/` each publish).
+- **Apex** `wadamesh.com` 301-redirects to the flasher — **activate by pointing
+  the `wadamesh.com` A record at the VPS** in Cloudflare (it's still on the parking IP).
+
 ## TODO before public launch
 
-- **Web flasher** (`flasher.wadamesh.com`) — esptool-js / Web Serial install page
-  with a board picker. Not yet built; the firmware already points "update manually
-  at flasher.wadamesh.com" here.
 - **Re-enable OTA-over-Wi-Fi** in the firmware (currently it version-checks then
   defers to manual flashing).
-- **Landing page** at `wadamesh.com`.
+- **Flip `wadamesh` repo public** = launch.
 - Decide tile-proxy sharing: dedicated `tiles.wadamesh.com` (this config) vs
   reusing the meshcomod proxy.
 
