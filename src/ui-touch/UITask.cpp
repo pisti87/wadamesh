@@ -1341,6 +1341,7 @@ static void formatAgeBadge(char* buf, size_t cap, uint32_t age_secs);        // 
 static void formatDistanceBadge(char* out, size_t out_cap, double self_lat, double self_lon,
                                 int32_t c_lat_e6, int32_t c_lon_e6);          // defined with the contacts list
 static void openChannelLongPressActionSheet(int thread_idx, const char* name);
+static void usernameBubbleColors(const char* name, lv_color_t* bubble_bg, lv_color_t* name_col);
 // ============================================================
 // Helpers
 // ============================================================
@@ -3266,6 +3267,25 @@ static void clipboardSet(const char* text, const char* tag) {
 
 // LV_EVENT_LONG_PRESSED handler: copies the target object's label text.
 // User-data carries an optional tag shown in the "Copied X" toast.
+// Copy with LVGL recolor tokens removed: "#RRGGBB text#" -> "text". Safe for
+// plain labels too (none of our copyable labels contain a literal '#').
+static void stripRecolor(const char* src, char* dst, size_t dstsz) {
+  auto ishex = [](char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+  };
+  size_t o = 0;
+  for (const char* p = src; *p && o + 1 < dstsz; ) {
+    if (*p == '#') {
+      bool open = ishex(p[1]) && ishex(p[2]) && ishex(p[3]) &&
+                  ishex(p[4]) && ishex(p[5]) && ishex(p[6]) && p[7] == ' ';
+      if (open) { p += 8; continue; }   // skip "#RRGGBB "
+      ++p; continue;                    // skip the closing '#'
+    }
+    dst[o++] = *p++;
+  }
+  dst[o] = '\0';
+}
+
 static void copyLabelLongPressCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_LONG_PRESSED) return;
   lv_obj_t* obj = lv_event_get_target(e);
@@ -3274,7 +3294,9 @@ static void copyLabelLongPressCb(lv_event_t* e) {
   if (!text || !text[0]) return;
   lv_indev_t* act = lv_indev_get_act();
   if (act) lv_indev_wait_release(act);   // swallow the trailing CLICKED
-  clipboardSet(text, static_cast<const char*>(lv_event_get_user_data(e)));
+  char clean[600];
+  stripRecolor(text, clean, sizeof(clean));
+  clipboardSet(clean, static_cast<const char*>(lv_event_get_user_data(e)));
 }
 
 // LV_EVENT_LONG_PRESSED handler on a textarea: pastes clipboard at cursor.
@@ -14970,6 +14992,15 @@ static void msgInfoReplayCb(lv_event_t* e) {
   if (g_lv.task) g_lv.task->showAlert(TR("Replaying route\xe2\x80\xa6"), 1200);
 }
 
+// The signature colour a node would carry as a chat bubble (same FNV-1a hue as
+// usernameBubbleColors), as 0xRRGGBB for an LVGL "#RRGGBB ..#" recolor token.
+static uint32_t nodeSigColorHex(const char* s) {
+  if (!s || !s[0]) return 0xFFFFFFu;
+  lv_color_t bg, nc;
+  usernameBubbleColors(s, &bg, &nc);
+  return lv_color_to32(nc) & 0xFFFFFFu;
+}
+
 static void openMessageInfoPopup(int msg_idx) {
   if (!g_lv.task) return;
   UITask::UIMessage m;
@@ -15023,7 +15054,7 @@ static void openMessageInfoPopup(int msg_idx) {
   //   SNR    -3.5 dB             (or "—")
   //   RSSI   -101 dBm            (or "—")
   //   Status sent / delivered / failed   (only when outgoing DM)
-  char body[420];
+  char body[600];   // extra headroom for per-hop recolor markers (#RRGGBB ... #)
   int blen = 0;
   // Title is rendered as a separate label below — don't repeat it in body.
   // Time
@@ -15078,9 +15109,11 @@ static void openMessageInfoPopup(int msg_idx) {
           snprintf(hashstr + b * 2, sizeof(hashstr) - b * 2, "%02X", m.in_path[off + b]);
         char nm[33];   // ContactInfo.name is 32B; hold the full name (emoji eat 4B each)
         if (the_mesh.uiHopName(&m.in_path[off], hsz, nm, sizeof(nm)))
-          blen += snprintf(body + blen, sizeof(body) - blen, "\n %u. %s  %s", (unsigned)(h + 1), nm, hashstr);
+          blen += snprintf(body + blen, sizeof(body) - blen, "\n %u. #%06X %s  %s#",
+                           (unsigned)(h + 1), (unsigned)nodeSigColorHex(nm), nm, hashstr);
         else
-          blen += snprintf(body + blen, sizeof(body) - blen, "\n %u. %s", (unsigned)(h + 1), hashstr);
+          blen += snprintf(body + blen, sizeof(body) - blen, "\n %u. #%06X %s#",
+                           (unsigned)(h + 1), (unsigned)nodeSigColorHex(hashstr), hashstr);
       }
     }
   } else if (!m.outgoing) {
@@ -15118,9 +15151,11 @@ static void openMessageInfoPopup(int msg_idx) {
         snprintf(hashstr + b * 2, sizeof(hashstr) - b * 2, "%02X", hh[b]);
       char nm[33];   // ContactInfo.name is 32B; hold the full name (emoji eat 4B each)
       if (the_mesh.uiHopName(hh, hsz, nm, sizeof(nm)))
-        blen += snprintf(body + blen, sizeof(body) - blen, "\n  %s  %s", nm, hashstr);
+        blen += snprintf(body + blen, sizeof(body) - blen, "\n  #%06X %s  %s#",
+                         (unsigned)nodeSigColorHex(nm), nm, hashstr);
       else
-        blen += snprintf(body + blen, sizeof(body) - blen, "\n  %s", hashstr);
+        blen += snprintf(body + blen, sizeof(body) - blen, "\n  #%06X %s#",
+                         (unsigned)nodeSigColorHex(hashstr), hashstr);
     }
   }
   if (blen >= (int)sizeof(body)) blen = sizeof(body) - 1;
@@ -15135,15 +15170,58 @@ static void openMessageInfoPopup(int msg_idx) {
   lv_obj_set_width(title, card_w - 20 - 32);
   lv_obj_set_pos(title, 0, 4);
 
-  // Scrollable body between the pinned title and the pinned button row, so a
-  // long route (or a small screen) never overflows the card or pushes the
-  // buttons off — the metadata just scrolls.
-  const int content_h = card_h - 20;                  // card has pad_all = 10
-  const int body_top  = 30;
-  const int body_bot  = (show_route || show_trace) ? (content_h - 40) : content_h;  // 40 = button row + gap
+  // Action row pinned just below the title (ABOVE the route info), then the
+  // scrollable body below it. "Replay" (animate this message's repeater path on
+  // the map) and/or "Trace route" (live multi-hop SNR trace, DM only) — shown
+  // side-by-side when both apply, else full width.
+  const int  content_h = card_h - 20;                  // card has pad_all = 10
+  const bool has_btns  = (show_route || show_trace);
+  const int  btn_h     = 32;
+  const int  btn_row_y = 30;                            // just below the title
+  const int  body_top  = has_btns ? (btn_row_y + btn_h + 8) : 30;
+
+  if (has_btns) {
+    if (show_route && show_trace) {
+      const int bw = (card_w - 20 - 6) / 2;
+      lv_obj_t* rb = lv_btn_create(card);
+      lv_obj_set_size(rb, bw, btn_h);
+      lv_obj_set_pos(rb, 0, btn_row_y);
+      styleButton(rb);
+      lv_obj_add_event_cb(rb, msgInfoReplayCb, LV_EVENT_CLICKED, nullptr);
+      lv_obj_t* rl = lv_label_create(rb);
+      lv_label_set_text_fmt(rl, LV_SYMBOL_GPS " %s", TR("Replay"));
+      lv_obj_set_style_text_font(rl, &g_font_12, LV_PART_MAIN);
+      lv_obj_center(rl);
+
+      lv_obj_t* tb = lv_btn_create(card);
+      lv_obj_set_size(tb, bw, btn_h);
+      lv_obj_set_pos(tb, bw + 6, btn_row_y);
+      styleButton(tb);
+      lv_obj_add_event_cb(tb, msgInfoTraceCb, LV_EVENT_CLICKED, nullptr);
+      lv_obj_t* tl = lv_label_create(tb);
+      lv_label_set_text(tl, TR("Trace"));
+      lv_obj_set_style_text_font(tl, &g_font_12, LV_PART_MAIN);
+      lv_obj_center(tl);
+    } else {
+      lv_obj_t* b = lv_btn_create(card);
+      lv_obj_set_size(b, card_w - 20, btn_h);
+      lv_obj_set_pos(b, 0, btn_row_y);
+      styleButton(b);
+      lv_obj_add_event_cb(b, show_route ? msgInfoReplayCb : msgInfoTraceCb,
+                          LV_EVENT_CLICKED, nullptr);
+      lv_obj_t* l = lv_label_create(b);
+      lv_label_set_text_fmt(l, LV_SYMBOL_GPS "  %s",
+                            show_route ? TR("Replay route on map") : TR("Trace route"));
+      lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
+      lv_obj_center(l);
+    }
+  }
+
+  // Scrollable body below the action row. recolor is on so each repeater's
+  // identifier is tinted with its chat-bubble colour (markers built into `body`).
   lv_obj_t* bodywrap = lv_obj_create(card);
   lv_obj_remove_style_all(bodywrap);
-  lv_obj_set_size(bodywrap, card_w - 20, body_bot - body_top);
+  lv_obj_set_size(bodywrap, card_w - 20, content_h - body_top);
   lv_obj_set_pos(bodywrap, 0, body_top);
   lv_obj_set_style_bg_opa(bodywrap, LV_OPA_TRANSP, LV_PART_MAIN);
   lv_obj_set_scroll_dir(bodywrap, LV_DIR_VER);
@@ -15156,57 +15234,17 @@ static void openMessageInfoPopup(int msg_idx) {
 
   lv_obj_t* lbl = lv_label_create(bodywrap);
   lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
+  lv_label_set_recolor(lbl, true);
   lv_obj_set_width(lbl, card_w - 20 - 8);             // leave room for the scrollbar
   lv_label_set_text(lbl, body);
   lv_obj_set_style_text_color(lbl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(lbl, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(lbl, 0, 0);
-  // Long-press the body to copy the full dump (a drag scrolls, a hold copies).
+  // Long-press the body to copy the full dump (a drag scrolls, a hold copies;
+  // recolour markers are stripped on copy).
   lv_obj_add_flag(lbl, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(lbl, copyLabelLongPressCb, LV_EVENT_LONG_PRESSED,
                       const_cast<char*>("info"));
-
-  // Bottom action row: "Replay" (draw + animate this message's repeater path on
-  // the map) and/or "Trace route" (live multi-hop SNR trace, DM only). Shown
-  // side-by-side when both apply, else full width.
-  if (show_route || show_trace) {
-    const int btn_h = 32;
-    const int by    = card_h - 20 - btn_h;
-    if (show_route && show_trace) {
-      const int bw = (card_w - 20 - 6) / 2;
-      lv_obj_t* rb = lv_btn_create(card);
-      lv_obj_set_size(rb, bw, btn_h);
-      lv_obj_set_pos(rb, 0, by);
-      styleButton(rb);
-      lv_obj_add_event_cb(rb, msgInfoReplayCb, LV_EVENT_CLICKED, nullptr);
-      lv_obj_t* rl = lv_label_create(rb);
-      lv_label_set_text_fmt(rl, LV_SYMBOL_GPS " %s", TR("Replay"));
-      lv_obj_set_style_text_font(rl, &g_font_12, LV_PART_MAIN);
-      lv_obj_center(rl);
-
-      lv_obj_t* tb = lv_btn_create(card);
-      lv_obj_set_size(tb, bw, btn_h);
-      lv_obj_set_pos(tb, bw + 6, by);
-      styleButton(tb);
-      lv_obj_add_event_cb(tb, msgInfoTraceCb, LV_EVENT_CLICKED, nullptr);
-      lv_obj_t* tl = lv_label_create(tb);
-      lv_label_set_text(tl, TR("Trace"));
-      lv_obj_set_style_text_font(tl, &g_font_12, LV_PART_MAIN);
-      lv_obj_center(tl);
-    } else {
-      lv_obj_t* b = lv_btn_create(card);
-      lv_obj_set_size(b, card_w - 20, btn_h);
-      lv_obj_set_pos(b, 0, by);
-      styleButton(b);
-      lv_obj_add_event_cb(b, show_route ? msgInfoReplayCb : msgInfoTraceCb,
-                          LV_EVENT_CLICKED, nullptr);
-      lv_obj_t* l = lv_label_create(b);
-      lv_label_set_text_fmt(l, LV_SYMBOL_GPS "  %s",
-                            show_route ? TR("Replay route on map") : TR("Trace route"));
-      lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
-      lv_obj_center(l);
-    }
-  }
 
   // Bottom-right Close button removed — the X badge at the top-right is
   // the standard dismiss affordance now (same as every other popup).
