@@ -8848,6 +8848,7 @@ static lv_chart_series_t* s_home_chart_tx = nullptr;
 static lv_chart_series_t* s_home_chart_rx = nullptr;
 // Compact legend label above the chart showing live TX/RX totals.
 static lv_obj_t* s_home_chart_legend = nullptr;
+static lv_obj_t* s_home_chart_sig    = nullptr;   // live signal chip drawn inside the graph box
 
 static void heartbeatAnimOpa(void* var, int32_t v) {
   lv_obj_set_style_bg_opa(static_cast<lv_obj_t*>(var),
@@ -11205,6 +11206,7 @@ static void makeHome(lv_obj_t* tab) {
   s_home_heartbeat  = nullptr;
   s_home_batt_pct   = nullptr;
   s_home_batt_icon  = nullptr;
+  s_home_chart_sig  = nullptr;
 
   g_lv.home_state = lv_label_create(tab);
   lv_label_set_text(g_lv.home_state, TR("Connecting..."));
@@ -11290,6 +11292,29 @@ static void makeHome(lv_obj_t* tab) {
     // Tap the graph for the signal & traffic detail popup.
     lv_obj_add_flag(s_home_chart, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_home_chart, homeChartClickedCb, LV_EVENT_CLICKED, nullptr);
+
+    // In-box overlays: live signal (top-left) + a clear tap cue (bottom-right).
+    // Both sit on a faint chip so they read over the TX/RX lines, and neither is
+    // clickable, so a tap anywhere on the box falls through to the chart handler.
+    s_home_chart_sig = lv_label_create(s_home_chart);
+    lv_label_set_text(s_home_chart_sig, "Sig --");
+    lv_obj_set_style_text_font(s_home_chart_sig, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_home_chart_sig, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_home_chart_sig, lv_color_hex(COLOR_BG), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_home_chart_sig, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_pad_hor(s_home_chart_sig, 3, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_home_chart_sig, 3, LV_PART_MAIN);
+    lv_obj_align(s_home_chart_sig, LV_ALIGN_TOP_LEFT, 2, 2);
+
+    lv_obj_t* hint = lv_label_create(s_home_chart);
+    lv_label_set_text(hint, LV_SYMBOL_LIST "  tap for details");
+    lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(hint, lv_color_hex(COLOR_BG), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(hint, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_pad_hor(hint, 3, LV_PART_MAIN);
+    lv_obj_set_style_radius(hint, 3, LV_PART_MAIN);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_RIGHT, -2, -2);
   }
 
   // Send Advert button. Portrait: full-width row below the chart. Landscape:
@@ -18570,13 +18595,16 @@ static void refreshStatusLabels() {
       lv_chart_set_range(s_home_chart, LV_CHART_AXIS_PRIMARY_Y, 0, s_chart_max_y);
     }
     // Legend: total counts since boot, plus the current y-range peak.
-    if (s_home_chart_legend) {
+    {
+      // In-box signal chip + the legend's traffic counts.
       const uint32_t sms = the_mesh.uiSignalMs();
       char sigtxt[16];
       if (sms == 0 || (millis() - sms) > 300000UL) snprintf(sigtxt, sizeof sigtxt, "Sig --");
-      else snprintf(sigtxt, sizeof sigtxt, "Sig %ddB", the_mesh.uiSignalSnrQ4() / 4);
-      lv_label_set_text_fmt(s_home_chart_legend, "%s   TX %u  RX %u  (tap)",
-                            sigtxt, (unsigned)cur_tx, (unsigned)cur_rx);
+      else snprintf(sigtxt, sizeof sigtxt, "Sig %d dB", the_mesh.uiSignalSnrQ4() / 4);
+      if (s_home_chart_sig) lv_label_set_text(s_home_chart_sig, sigtxt);
+      if (s_home_chart_legend)
+        lv_label_set_text_fmt(s_home_chart_legend, TR("TX %u  /  RX %u"),
+                              (unsigned)cur_tx, (unsigned)cur_rx);
     }
   }
   const bool settings_active = (active_tab == SETTINGS_TAB_INDEX);
