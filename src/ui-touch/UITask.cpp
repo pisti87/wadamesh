@@ -18214,6 +18214,27 @@ static void updateGlobalStatusBar() {
   }
   lv_obj_align(g_statusbar.left_label, LV_ALIGN_LEFT_MID, in_chan_chat ? 24 : 6, 0);
 
+  // The home tab shows the user's profile name in a fixed ~11-char window that
+  // marquee-scrolls when it's longer. These track that config so we (a) reset it
+  // when the left zone is reused by another tab, and (b) only re-apply it on an
+  // actual name change — re-setting LONG_SCROLL each tick would restart the
+  // marquee and it'd never advance.
+  static bool s_left_home_cfg  = false;
+  static char s_left_home_name[24] = {0};
+  {
+    int htab = (g_lv.tabview) ? (int)lv_tabview_get_tab_act(g_lv.tabview) : -1;
+    bool home_zone = (s_settings_open_cat < 0) && (s_chat_title[0] == '\0') && (htab == 0);
+#if defined(HAS_TDECK_GT911)
+    if (s_fullscreen_view && s_fullscreen_title[0]) home_zone = false;
+#endif
+    if (!home_zone && s_left_home_cfg) {
+      lv_obj_set_width(g_statusbar.left_label, LV_SIZE_CONTENT);
+      lv_label_set_long_mode(g_statusbar.left_label, LV_LABEL_LONG_WRAP);
+      s_left_home_cfg = false;
+      s_left_home_name[0] = '\0';   // force re-config on the next home entry
+    }
+  }
+
   // ---- Left zone ----
   if (s_settings_open_cat >= 0) {
     // A settings detail sheet is open: the bar carries its Back chevron + the page
@@ -18257,7 +18278,26 @@ static void updateGlobalStatusBar() {
       // On the immersive map the left zone carries the required OSM attribution.
       lv_label_set_text(g_statusbar.left_label, TR("\xC2\xA9 OpenStreetMap"));
     } else if (tab == 0) {
-      lv_label_set_text(g_statusbar.left_label, TR("WADAMESH"));
+      // Home: the user's profile name, capped to a ~11-char-wide window. Longer
+      // names marquee-scroll so they never run into the status icons. Reconfigure
+      // only when the name actually changes (else the scroll restarts each tick).
+      const char* nm = g_lv.task->getNodeNameCstr();
+      if (!nm || !nm[0]) nm = "WADAMESH";
+      if (strncmp(s_left_home_name, nm, sizeof(s_left_home_name)) != 0) {
+        strncpy(s_left_home_name, nm, sizeof(s_left_home_name) - 1);
+        s_left_home_name[sizeof(s_left_home_name) - 1] = '\0';
+        int nchars = 0;
+        for (const char* p = nm; *p; ++p) if (((uint8_t)*p & 0xC0) != 0x80) ++nchars;  // UTF-8 codepoints
+        if (nchars > 11) {
+          lv_obj_set_width(g_statusbar.left_label, 100);   // ~11 chars at font_14
+          lv_label_set_long_mode(g_statusbar.left_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+        } else {
+          lv_obj_set_width(g_statusbar.left_label, LV_SIZE_CONTENT);
+          lv_label_set_long_mode(g_statusbar.left_label, LV_LABEL_LONG_WRAP);
+        }
+        lv_label_set_text(g_statusbar.left_label, nm);
+      }
+      s_left_home_cfg = true;
     } else {
       int total_unread = g_lv.task->getUnreadTotal();
       if (total_unread > 0) {
