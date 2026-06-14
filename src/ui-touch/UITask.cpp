@@ -18635,18 +18635,15 @@ static void updateGlobalStatusBar() {
       if (strncmp(s_left_home_name, nm, sizeof(s_left_home_name)) != 0) {
         strncpy(s_left_home_name, nm, sizeof(s_left_home_name) - 1);
         s_left_home_name[sizeof(s_left_home_name) - 1] = '\0';
-        int nchars = 0;
-        for (const char* p = nm; *p; ++p) if (((uint8_t)*p & 0xC0) != 0x80) ++nchars;  // UTF-8 codepoints
-        if (nchars > 11) {
-          // ~11 chars on the wide T-Deck; narrower on the V4 to leave room for
-          // the new signal bars in the status row.
-          lv_obj_set_width(g_statusbar.left_label,
-                           (lv_disp_get_hor_res(nullptr) >= 300) ? 100 : 74);
-          lv_label_set_long_mode(g_statusbar.left_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
-        } else {
-          lv_obj_set_width(g_statusbar.left_label, LV_SIZE_CONTENT);
-          lv_label_set_long_mode(g_statusbar.left_label, LV_LABEL_LONG_WRAP);
-        }
+        // FIXED window so the name can never run into the clock/status icons —
+        // ~100 px on the wide T-Deck, narrower on the V4 (portrait, clock sits
+        // further left). A char-count cap can't catch wide glyphs (W/M), so cap
+        // the WIDTH. LONG_SCROLL_CIRCULAR only animates when the name overflows
+        // the window — short names render static — so no threshold is needed.
+        lv_obj_set_width(g_statusbar.left_label,
+                         (lv_disp_get_hor_res(nullptr) >= 300) ? 100 : 74);
+        lv_label_set_long_mode(g_statusbar.left_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+        lv_obj_set_style_anim_speed(g_statusbar.left_label, 14, LV_PART_MAIN);  // slow, readable marquee
         lv_label_set_text(g_statusbar.left_label, nm);
       }
       s_left_home_cfg = true;
