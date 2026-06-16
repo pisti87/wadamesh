@@ -23197,11 +23197,57 @@ void UITask::onPingReply(const ContactInfo& contact, const uint8_t* data, size_t
   showAlert(msg, 5000);
 }
 
+// Telemetry response window — a dismissible card (same style as the map-options
+// popup) instead of a single-slot toast, so the full multi-line reading stays on
+// screen until tapped away and can scroll if it's long. Tap the dimmed backdrop
+// to close.
+static lv_obj_t* s_telemetry_root = nullptr;
+static void telemetryWindowDismissCb(lv_event_t* e) {
+  if (lv_event_get_target(e) != s_telemetry_root) return;   // backdrop only
+  if (s_telemetry_root) { lv_obj_del(s_telemetry_root); s_telemetry_root = nullptr; }
+}
+static void openTelemetryWindow(const char* text) {
+  if (s_telemetry_root) { lv_obj_del(s_telemetry_root); s_telemetry_root = nullptr; }
+  const lv_coord_t sw = lv_disp_get_hor_res(nullptr);
+  const lv_coord_t sh = lv_disp_get_ver_res(nullptr);
+  s_telemetry_root = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(s_telemetry_root);
+  lv_obj_set_size(s_telemetry_root, sw, sh - STATUSBAR_H);
+  lv_obj_set_pos(s_telemetry_root, 0, STATUSBAR_H);
+  lv_obj_set_style_bg_color(s_telemetry_root, lv_color_black(), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_telemetry_root, LV_OPA_50, LV_PART_MAIN);
+  lv_obj_clear_flag(s_telemetry_root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_event_cb(s_telemetry_root, telemetryWindowDismissCb, LV_EVENT_CLICKED, nullptr);
+
+  const lv_coord_t cardw = sw - 24;
+  lv_obj_t* card = lv_obj_create(s_telemetry_root);
+  lv_obj_remove_style_all(card);
+  lv_obj_set_size(card, cardw, LV_MIN((lv_coord_t)(sh - STATUSBAR_H - 24), (lv_coord_t)200));
+  lv_obj_align(card, LV_ALIGN_TOP_MID, 0, 8);
+  styleSurface(card, COLOR_PANEL, 8);
+  lv_obj_set_style_border_color(card, lv_color_hex(0x18191A), LV_PART_MAIN);
+  lv_obj_set_style_border_width(card, 1, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(card, 12, LV_PART_MAIN);   // card stays scrollable for long readings
+
+  lv_obj_t* title = lv_label_create(card);
+  lv_label_set_text(title, TR("Telemetry"));
+  lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
+  lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  lv_obj_t* body = lv_label_create(card);
+  lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(body, cardw - 24);
+  lv_label_set_text(body, text);
+  lv_obj_set_style_text_font(body, &g_font_12, LV_PART_MAIN);
+  lv_obj_set_style_text_color(body, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+  lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, 24);
+}
+
 // Decode a CayenneLPP-formatted telemetry response into a human-readable
-// toast. Walks the channels with LPPReader and concatenates whatever common
+// window. Walks the channels with LPPReader and concatenates whatever common
 // fields the payload contains (voltage / temperature / humidity / pressure /
-// GPS / etc). Unknown channels are skipped via LPPReader::skipData. The
-// alert is capped at 5 s because the touch panel only has one toast slot.
+// GPS / etc). Unknown channels are skipped via LPPReader::skipData.
 void UITask::onTelemetryReply(const ContactInfo& contact, const uint8_t* data, size_t len) {
   s_ui_ping_deadline_ms = 0;  // reply arrived, cancel timeout
   char nm[24];
@@ -23337,7 +23383,7 @@ done: {
     snprintf(msg, sizeof(msg), "%s: %uB %s",
              nm, (unsigned)len, hex);
   }
-  showAlert(msg, 7000);
+  openTelemetryWindow(msg);
 }
 }
 
