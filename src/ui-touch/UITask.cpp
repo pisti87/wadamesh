@@ -522,6 +522,7 @@ struct GlobalStatusBar {
   lv_obj_t* left_label;
   lv_obj_t* conn_icon;       // Wi-Fi glyph
   lv_obj_t* ble_icon;        // Bluetooth glyph (separate from Wi-Fi)
+  lv_obj_t* sd_icon;         // microSD read/write activity LED (left of Wi-Fi)
   lv_obj_t* clock;
   lv_obj_t* batt_pct;
   lv_obj_t* batt_icon;
@@ -532,6 +533,19 @@ struct GlobalStatusBar {
 };
 static GlobalStatusBar g_statusbar = {};
 static void updateGlobalStatusBar();   // fwd decl, called from refresh tick
+
+// microSD read/write activity. markSdIo() stamps the time of the last SD access
+// (SD-backed tile cache, SD tile packs, file manager, mount). UITask::loop lights
+// a small LED in the status bar for a short window after each access. Cost on the
+// hot path is one 32-bit timestamp store; the loop toggle is edge-triggered so it
+// only touches LVGL when the lit/dark state actually flips. Written from both
+// cores (core-0 fetch task + core-1 UI) — an aligned word store is atomic on the
+// S3, and a stale read only ever mistimes the LED by a frame, which is harmless.
+static volatile uint32_t g_sd_io_ms = 0;
+static inline void markSdIo() { const uint32_t t = millis(); g_sd_io_ms = t ? t : 1; }
+// How long the LED stays lit after the last SD access (ms). Long enough that a
+// single quick read is visible, short enough to read as "activity" not "on".
+static constexpr uint32_t k_sd_io_led_ms = 180;
 
 // Active chat thread name, surfaced in the status bar's left zone. The in-chat
 // header bar (back button + name) was removed to give the conversation the full
@@ -10711,6 +10725,7 @@ static bool fmSdTryMount() {
     s_sd_mounted = true;
     s_sd_size = SD.cardSize();
     s_sd_retry_after_ms = 0;                    // clear any prior backoff
+    markSdIo();                                 // mount touched the card -> blip the LED
     return true;
   }
   SD.end();                                     // clean up on failure
@@ -13482,23 +13497,31 @@ static bool           s_tiles_fs_ready = false;
 static fs::FS*        s_tile_fs   = nullptr;
 static char           s_tile_root[16] = "";
 
+// When the tile cache is on the SD fallback (s_tile_fs != the LittleFS partition),
+// every access is real microSD I/O -> light the activity LED. On the flash
+// partition this is a no-op (the LED tracks SD only).
+static inline void tileCacheMarkSdIo() { if (s_tile_fs && s_tile_fs != &s_tiles_fs) markSdIo(); }
 static inline bool tileCacheExists(const char* rel) {
   if (!s_tile_fs) return false;
+  tileCacheMarkSdIo();
   char p[80]; snprintf(p, sizeof p, "%s%s", s_tile_root, rel);
   return s_tile_fs->exists(p);
 }
 static inline File tileCacheOpen(const char* rel, const char* mode) {
   if (!s_tile_fs) return File();
+  tileCacheMarkSdIo();
   char p[80]; snprintf(p, sizeof p, "%s%s", s_tile_root, rel);
   return s_tile_fs->open(p, mode);
 }
 static inline void tileCacheRemove(const char* rel) {
   if (!s_tile_fs) return;
+  tileCacheMarkSdIo();
   char p[80]; snprintf(p, sizeof p, "%s%s", s_tile_root, rel);
   s_tile_fs->remove(p);
 }
 static inline void tileCacheMkdir(const char* rel) {
   if (!s_tile_fs) return;
+  tileCacheMarkSdIo();
   char p[80]; snprintf(p, sizeof p, "%s%s", s_tile_root, rel);
   s_tile_fs->mkdir(p);
 }
@@ -14353,6 +14376,7 @@ static bool loadTileJpeg(uint8_t z, int32_t x, int32_t y,
   if (s_tiles_from_sd) {
     // Tile source = microSD: read straight off the card (fully offline, no server fetch).
     if (!fmSdTryMount()) return false;
+    markSdIo();                          // SD read activity -> status-bar LED
     // Prefer the Meshtastic/MeshCore standard layout /maps/osm/{z}/{x}/{y}.png
     // (decoded via lodepng); fall back to the legacy /tiles/{z}/{x}/{y}.jpg.
     char ppath[56];
@@ -20956,7 +20980,7 @@ static void buildGlobalStatusBar() {
   lv_label_set_text(g_statusbar.clock, TR("--:--"));
   lv_obj_set_style_text_color(g_statusbar.clock, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_statusbar.clock, &g_font_12, LV_PART_MAIN);
-  lv_obj_align(g_statusbar.clock, LV_ALIGN_RIGHT_MID, -110, 0);
+  lv_obj_align(g_statusbar.clock, LV_ALIGN_RIGHT_MID, -126, 0);   // shifted left to free a slot for the SD LED
 
   // Wi-Fi glyph (right of the Bluetooth glyph, left of the signal bars).
   g_statusbar.conn_icon = lv_label_create(g_statusbar.root);
@@ -20965,12 +20989,26 @@ static void buildGlobalStatusBar() {
   lv_obj_set_style_text_font(g_statusbar.conn_icon, &g_font_12, LV_PART_MAIN);
   lv_obj_align(g_statusbar.conn_icon, LV_ALIGN_RIGHT_MID, -73, 0);
 
-  // Bluetooth glyph (left of Wi-Fi).
+  // Bluetooth glyph (left of the SD LED).
   g_statusbar.ble_icon = lv_label_create(g_statusbar.root);
   lv_label_set_text(g_statusbar.ble_icon, TR(""));
   lv_obj_set_style_text_color(g_statusbar.ble_icon, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_statusbar.ble_icon, &g_font_12, LV_PART_MAIN);
-  lv_obj_align(g_statusbar.ble_icon, LV_ALIGN_RIGHT_MID, -95, 0);
+  lv_obj_align(g_statusbar.ble_icon, LV_ALIGN_RIGHT_MID, -111, 0);
+
+  // microSD read/write activity LED — a small amber dot in the gap just left of
+  // the Wi-Fi glyph. Hidden when idle; UITask::loop lights it for ~180 ms after
+  // any SD access (markSdIo). A bg-coloured dot (not a glyph) keeps it tiny and
+  // unambiguous as an activity light, and costs no font space.
+  g_statusbar.sd_icon = lv_obj_create(g_statusbar.root);
+  lv_obj_remove_style_all(g_statusbar.sd_icon);
+  lv_obj_set_size(g_statusbar.sd_icon, 8, 8);
+  lv_obj_set_style_radius(g_statusbar.sd_icon, 4, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(g_statusbar.sd_icon, lv_color_hex(0xF5A623), LV_PART_MAIN);  // amber = SD activity
+  lv_obj_set_style_bg_opa(g_statusbar.sd_icon, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_clear_flag(g_statusbar.sd_icon, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_align(g_statusbar.sd_icon, LV_ALIGN_RIGHT_MID, -91, 0);
+  lv_obj_add_flag(g_statusbar.sd_icon, LV_OBJ_FLAG_HIDDEN);   // shown only during SD I/O
 
   // ---- Mesh signal-strength bars (just left of the battery) ----
   // Four bars of increasing height; the lit count reflects the SNR of the last
@@ -21001,7 +21039,7 @@ static void buildGlobalStatusBar() {
   lv_label_set_text(g_statusbar.layout_label, TR(""));
   lv_obj_set_style_text_color(g_statusbar.layout_label, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_statusbar.layout_label, &g_font_12, LV_PART_MAIN);
-  lv_obj_align(g_statusbar.layout_label, LV_ALIGN_RIGHT_MID, -150, 0);
+  lv_obj_align(g_statusbar.layout_label, LV_ALIGN_RIGHT_MID, -166, 0);   // follows the clock's shift
   lv_obj_add_flag(g_statusbar.layout_label, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -25449,6 +25487,20 @@ void UITask::loop() {
         else           lv_obj_add_flag(tab_btns, LV_OBJ_FLAG_CLICKABLE);
         s_tabbar_locked = want_lock;
       }
+    }
+  }
+
+  // microSD activity LED: lit for k_sd_io_led_ms after the last SD access
+  // (markSdIo). Edge-triggered — LVGL is only touched when the lit/dark state
+  // flips, so an idle device costs one comparison per loop and nothing else.
+  if (g_statusbar.sd_icon) {
+    static int8_t s_sd_led = -1;   // -1 = unset -> forces the initial sync
+    const bool lit = (g_sd_io_ms != 0) &&
+                     ((uint32_t)(now - g_sd_io_ms) < k_sd_io_led_ms);
+    if ((int8_t)lit != s_sd_led) {
+      s_sd_led = lit;
+      if (lit) lv_obj_clear_flag(g_statusbar.sd_icon, LV_OBJ_FLAG_HIDDEN);
+      else     lv_obj_add_flag(g_statusbar.sd_icon, LV_OBJ_FLAG_HIDDEN);
     }
   }
 
