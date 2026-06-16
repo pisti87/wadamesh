@@ -17705,6 +17705,13 @@ static void refreshChatDetail(LvChatPanel& p) {
     if (m.outgoing && m.sent_fp) {
       const uint8_t reps = the_mesh.uiRepeatsForFp(m.sent_fp);
       if (reps > 0) snprintf(rep_buf, sizeof(rep_buf), " " LV_SYMBOL_REFRESH "%u", (unsigned)reps);
+    } else if (!m.outgoing && (m.meta_flags & UITask::MSG_META_HAS_RX)
+                           && (m.meta_flags & UITask::MSG_META_IS_FLOOD)) {
+      // Incoming flood: show how many repeater hops it traversed, in the same
+      // spot the outgoing repeats count uses. Hop count is the low 6 bits of
+      // path_len (same field the message-info popup reads). 0 = heard direct.
+      const uint8_t hops = (uint8_t)(m.path_len & 0x3F);
+      snprintf(rep_buf, sizeof(rep_buf), " " LV_SYMBOL_SHUFFLE "%u", (unsigned)hops);
     }
     if (ts_buf[0] || deliv_glyph[0] || rep_buf[0]) {
       char footer[40];
