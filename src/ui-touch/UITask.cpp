@@ -18178,6 +18178,12 @@ static void refreshContactsList() {
     if (ea->is_fav != eb->is_fav) {
       return ea->is_fav ? -1 : 1;
     }
+    // Contacts with an unknown last-heard time (rendered as "?") sink to the
+    // end — after favorites — in every sort mode. last_heard == 0 is the
+    // "never heard / unknown" sentinel (ContactInfo.last_advert_timestamp).
+    const bool a_unknown = (ea->last_heard == 0);
+    const bool b_unknown = (eb->last_heard == 0);
+    if (a_unknown != b_unknown) return a_unknown ? 1 : -1;
     if (g_contacts_sort == CONTACTS_SORT_LAST_HEARD ||
         g_contacts_sort == CONTACTS_SORT_LAST_MSG) {
       if (eb->last_heard != ea->last_heard) {
