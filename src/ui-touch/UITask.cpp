@@ -7461,6 +7461,20 @@ static void actionSheetSendMsgCb(lv_event_t* e) {
 // "No reply from <name>" toast and cancel the_mesh's pending slot.
 static unsigned long s_ui_ping_deadline_ms = 0;
 static char s_ui_ping_target_name[24] = {0};
+
+// ---- Telemetry window state (window + auto-poll defined further down) ----
+enum { TELEM_IN_PROGRESS = 0, TELEM_RECEIVED, TELEM_FAILED, TELEM_HISTORY };
+static uint8_t  s_telem_node[6] = {0};
+static char     s_telem_name[24] = {0};
+static char     s_telem_reading[140] = {0};    // latest decoded reading line
+static int      s_telem_state = TELEM_HISTORY;
+static bool     s_telem_manual_pending = false; // a manual request is awaiting its reply
+static uint32_t s_telem_deadline_ms = 0;        // manual-request timeout (separate from ping)
+static int      s_telem_win_now_h  = 0;         // display window: newer bound (hours ago)
+static int      s_telem_win_past_h = 24;        // display window: older bound (hours ago)
+#if defined(HAS_TDECK_GT911)
+static void openTelemetryWindow(const uint8_t* key6, const char* name, int state);   // fwd
+#endif
 static constexpr unsigned long UI_PING_TIMEOUT_MS = 30000;  // 30 s for flood paths
 
 static void actionSheetPingCb(lv_event_t* e) {
@@ -7538,17 +7552,28 @@ static void actionSheetTelemetryCb(lv_event_t* e) {
   // PAYLOAD_TYPE_REQ. See sendStatusPingWithGuestLoginForUI for the full
   // explanation.
   int r = the_mesh.sendTelemetryRequestWithGuestLoginForUI(c);
+#if defined(HAS_TDECK_GT911)
+  // Open the telemetry window immediately (history + live state); it updates when
+  // the reply lands or the request times out. Telemetry uses its own pending /
+  // deadline (not the shared ping timeout) so it never raises a "No reply" toast.
+  memcpy(s_telem_node, c.id.pub_key, 6);
+  copyUtf8ReplacingMissingGlyphs(&g_font_14, s_telem_name, sizeof s_telem_name, c.name[0] ? c.name : "node");
+  s_telem_reading[0] = '\0';
   if (r == MSG_SEND_SENT_FLOOD || r == MSG_SEND_SENT_DIRECT) {
-    copyUtf8ReplacingMissingGlyphs(&g_font_14, s_ui_ping_target_name,
-                                    sizeof(s_ui_ping_target_name),
-                                    c.name[0] ? c.name : "node");
-    s_ui_ping_deadline_ms = millis() + UI_PING_TIMEOUT_MS;
-    g_lv.task->showAlert(r == MSG_SEND_SENT_DIRECT
-                         ? TR("Telemetry req (direct)…")
-                         : TR("Telemetry req (flood)…"), 1400);
+    s_telem_manual_pending = true;
+    s_telem_deadline_ms = millis() + UI_PING_TIMEOUT_MS;
+    markMeshRequest();
+    openTelemetryWindow(s_telem_node, s_telem_name, TELEM_IN_PROGRESS);
   } else {
-    g_lv.task->showAlert(TR("Telemetry req failed"), 1200);
+    s_telem_manual_pending = false;
+    openTelemetryWindow(s_telem_node, s_telem_name, TELEM_FAILED);
   }
+#else
+  if (r == MSG_SEND_SENT_FLOOD || r == MSG_SEND_SENT_DIRECT)
+    g_lv.task->showAlert(TR("Telemetry req\xe2\x80\xa6"), 1400);
+  else
+    g_lv.task->showAlert(TR("Telemetry req failed"), 1200);
+#endif
 }
 
 // ---- Repeater admin console (login + CLI passthrough) ----------------------
@@ -10000,6 +10025,16 @@ static void batteryChartDismissCb(lv_event_t* e) {
   batteryChartClose();
 }
 static void batteryChartCloseCb(lv_event_t* e) { (void)e; batteryChartClose(); }  // the X badge
+static void openBatteryChartWindow();   // fwd (clear reopens to show the empty chart)
+static void batteryLogClearConfirmed() {
+  if (SD.cardType() != CARD_NONE) { markSdIo(); SD.remove(k_batt_log_path); }
+  batteryChartClose();
+  openBatteryChartWindow();
+}
+static void batteryClearCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  showConfirm(TR("Clear battery history?"), TR("Clear"), batteryLogClearConfirmed);
+}
 
 // Build the 24h battery-voltage chart popup from the SD log.
 // Reformat the battery chart's primary-Y axis ticks from raw millivolts to volts
@@ -10148,6 +10183,14 @@ static void openBatteryChartWindow() {
   lv_obj_set_style_text_font(sl, &g_font_12, LV_PART_MAIN);
   lv_obj_set_style_text_color(sl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_align(sl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+
+  // Clear the battery history (with confirmation).
+  lv_obj_t* clr = lv_btn_create(card);
+  lv_obj_set_size(clr, 30, 26);
+  lv_obj_align(clr, LV_ALIGN_BOTTOM_RIGHT, 0, 2);
+  lv_obj_set_style_bg_color(clr, lv_color_hex(0xB23A48), LV_PART_MAIN);
+  lv_obj_add_event_cb(clr, batteryClearCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* clrl = lv_label_create(clr); lv_label_set_text(clrl, LV_SYMBOL_TRASH); lv_obj_center(clrl);
 }
 
 static void batteryTapCb(lv_event_t* e) {
@@ -23380,6 +23423,7 @@ void UITask::onPingReply(const ContactInfo& contact, const uint8_t* data, size_t
 // popup) instead of a single-slot toast, so the full multi-line reading stays on
 // screen until tapped away and can scroll if it's long. Tap the dimmed backdrop
 // to close.
+#if defined(HAS_TDECK_GT911)   // telemetry window + per-node log/poll are SD-backed (T-Deck only)
 static lv_obj_t* s_telemetry_root = nullptr;
 static void telemetryClose() {
   if (s_telemetry_root) { lv_obj_del(s_telemetry_root); s_telemetry_root = nullptr; }
@@ -23389,8 +23433,131 @@ static void telemetryWindowDismissCb(lv_event_t* e) {
   telemetryClose();
 }
 static void telemetryCloseCb(lv_event_t* e) { (void)e; telemetryClose(); }   // the X badge
-static void openTelemetryWindow(const char* text) {
+// ---------- Telemetry auto-poll (per node; persisted /telemetry/poll.cfg) ----------
+struct TelemPoll { uint8_t key[6]; uint16_t interval_min; uint32_t next_ms; bool used; };
+static const int      k_telem_poll_max = 8;
+static const uint16_t k_telem_intervals[] = { 1, 5, 15, 30, 60, 120 };
+static TelemPoll      s_telem_poll[k_telem_poll_max];
+static bool           s_telem_poll_loaded = false;
+
+static bool telemetryFindContact(const uint8_t* key6, ContactInfo* out) {
+  const uint32_t n = the_mesh.getNumContacts();
+  for (uint32_t i = 0; i < n; ++i) {
+    ContactInfo c; if (!the_mesh.getContactByIdx(i, c)) continue;
+    if (memcmp(c.id.pub_key, key6, 6) == 0) { *out = c; return true; }
+  }
+  return false;
+}
+static void telemetryPollLoad() {
+  if (s_telem_poll_loaded) return;
+  s_telem_poll_loaded = true;
+  for (auto& e : s_telem_poll) e.used = false;
+  if (SD.cardType() == CARD_NONE) return;
+  File f = SD.open("/telemetry/poll.cfg", FILE_READ);
+  if (!f) return;
+  int idx = 0;
+  while (f.available() && idx < k_telem_poll_max) {
+    String ln = f.readStringUntil('\n'); ln.trim();
+    if (ln.length() < 14) continue;                       // 12 hex + space + >=1 digit
+    TelemPoll& e = s_telem_poll[idx];
+    for (int b = 0; b < 6; ++b)
+      e.key[b] = (uint8_t)strtoul(ln.substring(b * 2, b * 2 + 2).c_str(), nullptr, 16);
+    const int mn = ln.substring(13).toInt();
+    if (mn <= 0) continue;
+    e.interval_min = (uint16_t)mn;
+    e.next_ms = millis() + 5000;                          // first poll shortly after load
+    e.used = true; ++idx;
+  }
+  f.close();
+}
+static void telemetryPollSave() {
+  if (SD.cardType() == CARD_NONE) return;
+  markSdIo();
+  SD.mkdir("/telemetry");
+  File f = SD.open("/telemetry/poll.cfg", FILE_WRITE);
+  if (!f) return;
+  for (auto& e : s_telem_poll)
+    if (e.used) f.printf("%02X%02X%02X%02X%02X%02X %u\n",
+                         e.key[0], e.key[1], e.key[2], e.key[3], e.key[4], e.key[5],
+                         (unsigned)e.interval_min);
+  f.close();
+}
+static int telemetryPollGet(const uint8_t* key6) {
+  telemetryPollLoad();
+  for (auto& e : s_telem_poll) if (e.used && memcmp(e.key, key6, 6) == 0) return e.interval_min;
+  return 0;
+}
+static void telemetryPollSet(const uint8_t* key6, int interval_min) {
+  telemetryPollLoad();
+  for (auto& e : s_telem_poll) if (e.used && memcmp(e.key, key6, 6) == 0) e.used = false;  // drop old
+  if (interval_min > 0)
+    for (auto& e : s_telem_poll) if (!e.used) {
+      memcpy(e.key, key6, 6); e.interval_min = (uint16_t)interval_min;
+      e.next_ms = millis() + 3000; e.used = true; break;
+    }
+  telemetryPollSave();
+}
+static void telemetryPollTick(uint32_t now_ms) {
+  if (SD.cardType() == CARD_NONE) return;
+  telemetryPollLoad();
+  for (auto& e : s_telem_poll) {
+    if (!e.used || (int32_t)(now_ms - e.next_ms) < 0) continue;
+    e.next_ms = now_ms + (uint32_t)e.interval_min * 60000u;
+    ContactInfo c;
+    if (telemetryFindContact(e.key, &c)) {
+      const int r = the_mesh.sendTelemetryRequestWithGuestLoginForUI(c);   // logged on reply; no window
+      if (r == MSG_SEND_SENT_FLOOD || r == MSG_SEND_SENT_DIRECT) markMeshRequest();
+    }
+  }
+}
+
+// ---------- Telemetry window ----------
+static lv_obj_t* s_telem_now_ta  = nullptr;
+static lv_obj_t* s_telem_past_ta = nullptr;
+static void telemetryRebuild() {
+  openTelemetryWindow(s_telem_node, s_telem_name, s_telem_state);
+}
+static void telemWinApplyCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  if (s_telem_now_ta)  s_telem_win_now_h  = atoi(lv_textarea_get_text(s_telem_now_ta));
+  if (s_telem_past_ta) s_telem_win_past_h = atoi(lv_textarea_get_text(s_telem_past_ta));
+  if (s_telem_win_now_h  < 0) s_telem_win_now_h  = 0;
+  if (s_telem_win_past_h <= s_telem_win_now_h) s_telem_win_past_h = s_telem_win_now_h + 1;
+  telemetryRebuild();
+}
+static void telemPollToggleCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+  const bool on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  telemetryPollSet(s_telem_node, on ? 15 : 0);     // default 15 min on enable
+  telemetryRebuild();
+}
+static void telemPollIntervalCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  const int cur = telemetryPollGet(s_telem_node);
+  if (cur <= 0) return;
+  const int cnt = (int)(sizeof k_telem_intervals / sizeof k_telem_intervals[0]);
+  int ni = 0;
+  for (int i = 0; i < cnt; ++i) if (k_telem_intervals[i] == cur) ni = (i + 1) % cnt;
+  telemetryPollSet(s_telem_node, k_telem_intervals[ni]);
+  telemetryRebuild();
+}
+static void telemClearConfirmed() {
+  char path[40]; telemetryNodePath(s_telem_node, path, sizeof path);
+  if (SD.cardType() != CARD_NONE) { markSdIo(); SD.remove(path); }
+  telemetryRebuild();
+}
+static void telemClearCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  showConfirm(TR("Clear telemetry history for this node?"), TR("Clear"), telemClearConfirmed);
+}
+
+static void openTelemetryWindow(const uint8_t* key6, const char* name, int state) {
   if (s_telemetry_root) { lv_obj_del(s_telemetry_root); s_telemetry_root = nullptr; }
+  s_telem_now_ta = s_telem_past_ta = nullptr;
+  if (key6 && key6 != s_telem_node) memcpy(s_telem_node, key6, 6);
+  if (name && name != s_telem_name) { strncpy(s_telem_name, name, sizeof s_telem_name - 1); s_telem_name[sizeof s_telem_name - 1] = '\0'; }
+  s_telem_state = state;
+
   const lv_coord_t sw = lv_disp_get_hor_res(nullptr);
   const lv_coord_t sh = lv_disp_get_ver_res(nullptr);
   s_telemetry_root = lv_obj_create(lv_layer_top());
@@ -23402,31 +23569,197 @@ static void openTelemetryWindow(const char* text) {
   lv_obj_clear_flag(s_telemetry_root, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_event_cb(s_telemetry_root, telemetryWindowDismissCb, LV_EVENT_CLICKED, nullptr);
 
-  const lv_coord_t cardw = sw - 24;
+  const lv_coord_t cardw = sw - 16;
   lv_obj_t* card = lv_obj_create(s_telemetry_root);
   lv_obj_remove_style_all(card);
-  lv_obj_set_size(card, cardw, LV_MIN((lv_coord_t)(sh - STATUSBAR_H - 24), (lv_coord_t)200));
-  lv_obj_align(card, LV_ALIGN_TOP_MID, 0, 8);
+  lv_obj_set_size(card, cardw, sh - STATUSBAR_H - 12);
+  lv_obj_align(card, LV_ALIGN_TOP_MID, 0, 6);
   styleSurface(card, COLOR_PANEL, 8);
   lv_obj_set_style_border_color(card, lv_color_hex(0x18191A), LV_PART_MAIN);
   lv_obj_set_style_border_width(card, 1, LV_PART_MAIN);
-  lv_obj_set_style_pad_all(card, 12, LV_PART_MAIN);   // card stays scrollable for long readings
-  addCloseXBadge(card, telemetryCloseCb);             // universal top-right X
+  lv_obj_set_style_pad_all(card, 10, LV_PART_MAIN);
+  lv_obj_set_scroll_dir(card, LV_DIR_VER);
+  addCloseXBadge(card, telemetryCloseCb);
 
+  // Header: name + state.
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, TR("Telemetry"));
+  const char* stxt = (state == TELEM_IN_PROGRESS) ? "  \xe2\x80\x94 requesting\xe2\x80\xa6"
+                   : (state == TELEM_FAILED)      ? "  \xe2\x80\x94 last request failed" : "";
+  lv_label_set_text_fmt(title, "%s%s", name && name[0] ? name : "node", stxt);
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
-  lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+  lv_obj_set_style_text_color(title, lv_color_hex(state == TELEM_FAILED ? 0xE08080 : COLOR_TEXT), LV_PART_MAIN);
+  lv_obj_set_width(title, cardw - 20 - 30);
+  lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
+  lv_obj_set_pos(title, 0, 0);
+  int y = 22;
+  if (state == TELEM_RECEIVED && s_telem_reading[0]) {
+    lv_obj_t* rl = lv_label_create(card);
+    lv_label_set_long_mode(rl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(rl, cardw - 20);
+    lv_label_set_text(rl, s_telem_reading);
+    lv_obj_set_style_text_font(rl, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(rl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_pos(rl, 0, y);
+    y += 18;
+  }
 
-  lv_obj_t* body = lv_label_create(card);
-  lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
-  lv_obj_set_width(body, cardw - 24);
-  lv_label_set_text(body, text);
-  lv_obj_set_style_text_font(body, &g_font_12, LV_PART_MAIN);
-  lv_obj_set_style_text_color(body, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
-  lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, 24);
+  // ---- Read the per-node log into the chosen display window ----
+  static const int k_max = 300;
+  static uint16_t mvs[k_max]; static int16_t t10s[k_max]; static int16_t hums[k_max];
+  int n = 0;
+  const uint32_t now = (uint32_t)time(nullptr);
+  const uint32_t age_lo = (uint32_t)s_telem_win_now_h  * 3600u;
+  const uint32_t age_hi = (uint32_t)s_telem_win_past_h * 3600u;
+  if (SD.cardType() != CARD_NONE) {
+    markSdIo();
+    char path[40]; telemetryNodePath(s_telem_node, path, sizeof path);
+    File rf = SD.open(path, FILE_READ);
+    if (rf) {
+      while (rf.available() && n < k_max) {
+        String ln = rf.readStringUntil('\n');
+        if (ln.length() == 0) continue;
+        const uint32_t ep = (uint32_t)strtoul(ln.c_str(), nullptr, 10);
+        if (now > 1700000000 && ep != 0) {
+          const uint32_t age = (now > ep) ? (now - ep) : 0;
+          if (age < age_lo || age > age_hi) continue;          // outside the display window
+        }
+        const int t1 = ln.indexOf('\t');
+        const int t2 = (t1 >= 0) ? ln.indexOf('\t', t1 + 1) : -1;
+        const int t3 = (t2 >= 0) ? ln.indexOf('\t', t2 + 1) : -1;
+        const int t4 = (t3 >= 0) ? ln.indexOf('\t', t3 + 1) : -1;
+        if (t2 < 0 || t3 < 0 || t4 < 0) continue;
+        mvs[n]  = (uint16_t)ln.substring(t2 + 1, t3).toInt();
+        t10s[n] = (int16_t)ln.substring(t3 + 1, t4).toInt();
+        hums[n] = (int16_t)ln.substring(t4 + 1).toInt();
+        ++n;
+      }
+      rf.close();
+    }
+  }
+
+  // ---- Chart (battery V left; temperature + humidity right) ----
+  const int chart_x = 30, chart_rpad = 30, chart_h = 108;
+  lv_obj_t* chart = nullptr;
+  if (n > 0) {
+    chart = lv_chart_create(card);
+    lv_obj_set_size(chart, cardw - 20 - chart_x - chart_rpad, chart_h);
+    lv_obj_set_pos(chart, chart_x, y + 4);
+    lv_obj_clear_flag(chart, LV_OBJ_FLAG_SCROLLABLE);
+    lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(chart, n);
+    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y,   3400, 4700);   // battery mV (blue)
+    lv_chart_set_range(chart, LV_CHART_AXIS_SECONDARY_Y,  -20,  100);   // temp degC + humidity %
+    lv_chart_set_div_line_count(chart, 4, 6);
+    lv_obj_set_style_bg_color(chart, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(chart, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(chart, lv_color_hex(0x18191A), LV_PART_MAIN);
+    lv_obj_set_style_border_width(chart, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(chart, 6, LV_PART_MAIN);
+    lv_obj_set_style_line_color(chart, lv_color_hex(0x1A1D1F), LV_PART_MAIN);
+    lv_obj_set_style_size(chart, 3, LV_PART_INDICATOR);
+    lv_obj_set_style_pad_top(chart, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(chart, 6, LV_PART_MAIN);
+    lv_obj_set_style_text_font(chart, &g_font_12, LV_PART_TICKS);
+    lv_obj_set_style_text_color(chart, lv_color_hex(COLOR_SUB), LV_PART_TICKS);
+    lv_obj_set_style_line_color(chart, lv_color_hex(0x2A2E30), LV_PART_TICKS);
+    lv_obj_set_style_pad_left(chart, 4, LV_PART_TICKS);
+    lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_Y,   4, 0, 4, 1, true, 40);
+    lv_chart_set_axis_tick(chart, LV_CHART_AXIS_SECONDARY_Y, 4, 0, 4, 1, true, 36);
+    lv_obj_add_event_cb(chart, battChartTickCb, LV_EVENT_DRAW_PART_BEGIN, nullptr);   // primary -> volts
+    lv_chart_series_t* bs = lv_chart_add_series(chart, lv_color_hex(0x4F9DF7), LV_CHART_AXIS_PRIMARY_Y);    // battery blue
+    lv_chart_series_t* ts = lv_chart_add_series(chart, lv_color_hex(0xF5A623), LV_CHART_AXIS_SECONDARY_Y);  // temp orange
+    lv_chart_series_t* hs = lv_chart_add_series(chart, lv_color_hex(0x35C9C9), LV_CHART_AXIS_SECONDARY_Y);  // humidity cyan
+    for (int i = 0; i < n; ++i) {
+      lv_coord_t v = (lv_coord_t)mvs[i]; if (v > 4700) v = 4700;
+      lv_chart_set_next_value(chart, bs, mvs[i] > 0   ? v : LV_CHART_POINT_NONE);
+      lv_chart_set_next_value(chart, ts, t10s[i] > -3000 ? (lv_coord_t)(t10s[i] / 10) : LV_CHART_POINT_NONE);
+      lv_chart_set_next_value(chart, hs, hums[i] >= 0     ? (lv_coord_t)hums[i] : LV_CHART_POINT_NONE);
+    }
+    // legend
+    lv_obj_t* lg = lv_label_create(card);
+    lv_label_set_recolor(lg, true);
+    lv_label_set_text(lg, "#4F9DF7 \xe2\x97\x8f# V   #F5A623 \xe2\x97\x8f# \xc2\xb0""C   #35C9C9 \xe2\x97\x8f# %RH");
+    lv_obj_set_style_text_font(lg, &g_font_12, LV_PART_MAIN);
+    lv_obj_align_to(lg, chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
+    y += chart_h + 18;
+  } else {
+    lv_obj_t* none = lv_label_create(card);
+    lv_label_set_text(none, TR("No telemetry in this window.\nRequest one, or widen the range below."));
+    lv_obj_set_style_text_color(none, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_style_text_font(none, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_pos(none, 0, y + 6);
+    y += 44;
+  }
+
+  // ---- Display-window fields: "to" (h ago, newer) .. "from" (h ago, older) ----
+  {
+    lv_obj_t* lab = lv_label_create(card);
+    lv_label_set_text(lab, TR("Window  now-"));
+    lv_obj_set_style_text_font(lab, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lab, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_pos(lab, 0, y + 6);
+    s_telem_now_ta = lv_textarea_create(card);
+    lv_textarea_set_one_line(s_telem_now_ta, true);
+    lv_textarea_set_accepted_chars(s_telem_now_ta, "0123456789");
+    lv_textarea_set_max_length(s_telem_now_ta, 4);
+    lv_textarea_set_text(s_telem_now_ta, "0");
+    lv_obj_set_width(s_telem_now_ta, 44); lv_obj_set_pos(s_telem_now_ta, 70, y);
+    attachSettingsTaEvents(s_telem_now_ta);
+    char b0[8]; snprintf(b0, sizeof b0, "%d", s_telem_win_now_h); lv_textarea_set_text(s_telem_now_ta, b0);
+    lv_obj_t* lab2 = lv_label_create(card);
+    lv_label_set_text(lab2, TR("h .. now-"));
+    lv_obj_set_style_text_font(lab2, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lab2, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_pos(lab2, 120, y + 6);
+    s_telem_past_ta = lv_textarea_create(card);
+    lv_textarea_set_one_line(s_telem_past_ta, true);
+    lv_textarea_set_accepted_chars(s_telem_past_ta, "0123456789");
+    lv_textarea_set_max_length(s_telem_past_ta, 4);
+    lv_obj_set_width(s_telem_past_ta, 44); lv_obj_set_pos(s_telem_past_ta, 180, y);
+    attachSettingsTaEvents(s_telem_past_ta);
+    char b1[8]; snprintf(b1, sizeof b1, "%d", s_telem_win_past_h); lv_textarea_set_text(s_telem_past_ta, b1);
+    lv_obj_t* showb = lv_btn_create(card);
+    lv_obj_set_size(showb, 56, 30); lv_obj_set_pos(showb, 230, y);
+    styleButton(showb);
+    lv_obj_add_event_cb(showb, telemWinApplyCb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* sl = lv_label_create(showb); lv_label_set_text(sl, TR("Show")); lv_obj_center(sl);
+    y += 40;
+  }
+
+  // ---- Auto-poll: switch + interval (1/5/15/30/60/120 min) ----
+  {
+    const int pmin = telemetryPollGet(s_telem_node);
+    lv_obj_t* pl = lv_label_create(card);
+    lv_label_set_text(pl, TR("Auto-poll"));
+    lv_obj_set_style_text_font(pl, &g_font_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(pl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_pos(pl, 0, y + 6);
+    lv_obj_t* sw_p = lv_switch_create(card);
+    lv_obj_set_pos(sw_p, 80, y);
+    if (pmin > 0) lv_obj_add_state(sw_p, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(sw_p, telemPollToggleCb, LV_EVENT_VALUE_CHANGED, nullptr);
+    if (pmin > 0) {
+      lv_obj_t* ib = lv_btn_create(card);
+      lv_obj_set_size(ib, 88, 30); lv_obj_set_pos(ib, 150, y);
+      styleButton(ib);
+      lv_obj_add_event_cb(ib, telemPollIntervalCb, LV_EVENT_CLICKED, nullptr);
+      lv_obj_t* il = lv_label_create(ib); lv_label_set_text_fmt(il, "every %d min", pmin); lv_obj_center(il);
+    }
+    y += 40;
+  }
+
+  // ---- Clear this node's telemetry history ----
+  {
+    lv_obj_t* cb = lv_btn_create(card);
+    lv_obj_set_size(cb, cardw - 24, 32); lv_obj_set_pos(cb, 0, y);
+    styleButton(cb);
+    lv_obj_set_style_bg_color(cb, lv_color_hex(0xB23A48), LV_PART_MAIN);
+    lv_obj_add_event_cb(cb, telemClearCb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* cl = lv_label_create(cb); lv_label_set_text(cl, LV_SYMBOL_TRASH "  Clear history"); lv_obj_center(cl);
+    y += 40;
+  }
 }
+#endif  // HAS_TDECK_GT911 (telemetry window)
 
 // Decode a CayenneLPP-formatted telemetry response into a human-readable
 // window. Walks the channels with LPPReader and concatenates whatever common
@@ -23576,7 +23909,19 @@ done: {
     snprintf(msg, sizeof(msg), "%s: %uB %s",
              nm, (unsigned)len, hex);
   }
-  openTelemetryWindow(msg);
+#if defined(HAS_TDECK_GT911)
+  // Update the telemetry window ONLY for the node it's showing, and only when a
+  // manual request is in flight — auto-poll just logs (above) without a window.
+  if (s_telem_manual_pending && memcmp(s_telem_node, contact.id.pub_key, 6) == 0) {
+    strncpy(s_telem_reading, msg, sizeof s_telem_reading - 1);
+    s_telem_reading[sizeof s_telem_reading - 1] = '\0';
+    s_telem_manual_pending = false;
+    s_telem_deadline_ms = 0;
+    if (s_telemetry_root) openTelemetryWindow(s_telem_node, s_telem_name, TELEM_RECEIVED);
+  }
+#else
+  showAlert(msg, 7000);   // non-SD build: no per-node window, keep the toast
+#endif
 }
 }
 
@@ -25690,6 +26035,15 @@ void UITask::loop() {
     snprintf(msg, sizeof(msg), TR("No reply from %s"), s_ui_ping_target_name);
     showAlert(msg, 3500);
   }
+#if defined(HAS_TDECK_GT911)
+  // Manual telemetry request timed out — flip the open window to "failed" (it
+  // still shows the history). Auto-poll has no deadline, so it never lands here.
+  if (s_telem_manual_pending && s_telem_deadline_ms != 0 && now >= s_telem_deadline_ms) {
+    s_telem_manual_pending = false;
+    s_telem_deadline_ms = 0;
+    if (s_telemetry_root) openTelemetryWindow(s_telem_node, s_telem_name, TELEM_FAILED);
+  }
+#endif
 
   /* User button (BOOT / PIN_USER_BTN): press toggles the screen. When the
    * panel is off it wakes + resets the idle timer; when on it locks
@@ -26001,6 +26355,7 @@ void UITask::loop() {
 
 #if defined(HAS_TDECK_GT911)
   batteryLogTick((uint32_t)now);   // 5-min battery sample -> /meshcomod/battery.log
+  telemetryPollTick((uint32_t)now); // auto-poll due nodes -> log (no window)
 #endif
   versionCheckService(now);   // firmware update check (gear badge + About line)
   refreshSysInfo(now);        // live uptime / heap on the About sub-tab
