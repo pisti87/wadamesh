@@ -23223,6 +23223,19 @@ bool UITask::loadHistoryFromStorage() {
     _active_thread_idx = -1;
     _active_thread_is_channel = false;
   }
+  // Clear persisted unread counts for threads whose messages are no longer in
+  // the ring. The display ring is a fixed-size cache independent of the unread
+  // counter; if the device rebooted after ring overflow the counter can be
+  // non-zero while the ring holds nothing for that thread, producing a phantom
+  // badge that opens to an empty chat. Resetting here is safe: the user never
+  // saw those messages anyway (ring had already evicted them before the save).
+  for (int i = 0; i < MAX_UI_THREADS; ++i) {
+    if (_ui_threads[i].used && _ui_threads[i].unread > 0 &&
+        !threadHasMessageHistory(i)) {
+      _ui_threads[i].unread = 0;
+      _ui_threads[i].has_mention = false;
+    }
+  }
   return true;
 #else
   return false;
