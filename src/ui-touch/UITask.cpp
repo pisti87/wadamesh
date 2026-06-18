@@ -23305,22 +23305,34 @@ bool UITask::loadLegacyHistoryFromStorage() {
     _ui_threads[i].name[MAX_THREAD_NAME] = '\0';
   }
 
+  // The legacy file was written when MAX_UI_MESSAGES was smaller (96). Derive
+  // how many message slots are actually present from the remaining file bytes so
+  // we don't try to read past EOF when the ring has grown. Slots beyond the
+  // legacy count are left zero — the reconciliation pass below will clear any
+  // unread counts whose messages were already evicted.
+  const size_t bytes_after_threads = f.size() > f.position() ? f.size() - f.position() : 0;
+  const int legacy_slots = (int)(bytes_after_threads / disk_msg_sz);
+
   UiHistoryMsg m{};
   for (int i = 0; i < MAX_UI_MESSAGES; ++i) {
-    if (!readHistoryRec(f, &m, sizeof(m), disk_msg_sz)) { f.close(); return false; }
-    _ui_msgs[i].ts        = m.ts;
-    _ui_msgs[i].channel   = m.channel != 0;
-    _ui_msgs[i].outgoing  = m.outgoing != 0;
-    _ui_msgs[i].meta_flags = m.meta_flags;
-    _ui_msgs[i].path_len   = m.path_len;
-    _ui_msgs[i].snr_q4     = m.snr_q4;
-    _ui_msgs[i].rssi       = m.rssi;
-    strncpy(_ui_msgs[i].thread, m.thread, MAX_THREAD_NAME);
-    _ui_msgs[i].thread[MAX_THREAD_NAME] = '\0';
-    strncpy(_ui_msgs[i].sender, m.sender, MAX_SENDER_NAME);
-    _ui_msgs[i].sender[MAX_SENDER_NAME] = '\0';
-    strncpy(_ui_msgs[i].text, m.text, MAX_MSG_TEXT);
-    _ui_msgs[i].text[MAX_MSG_TEXT] = '\0';
+    if (i < legacy_slots) {
+      if (!readHistoryRec(f, &m, sizeof(m), disk_msg_sz)) { f.close(); return false; }
+      _ui_msgs[i].ts        = m.ts;
+      _ui_msgs[i].channel   = m.channel != 0;
+      _ui_msgs[i].outgoing  = m.outgoing != 0;
+      _ui_msgs[i].meta_flags = m.meta_flags;
+      _ui_msgs[i].path_len   = m.path_len;
+      _ui_msgs[i].snr_q4     = m.snr_q4;
+      _ui_msgs[i].rssi       = m.rssi;
+      strncpy(_ui_msgs[i].thread, m.thread, MAX_THREAD_NAME);
+      _ui_msgs[i].thread[MAX_THREAD_NAME] = '\0';
+      strncpy(_ui_msgs[i].sender, m.sender, MAX_SENDER_NAME);
+      _ui_msgs[i].sender[MAX_SENDER_NAME] = '\0';
+      strncpy(_ui_msgs[i].text, m.text, MAX_MSG_TEXT);
+      _ui_msgs[i].text[MAX_MSG_TEXT] = '\0';
+    } else {
+      _ui_msgs[i] = UIMessage{};
+    }
   }
   f.close();
 
