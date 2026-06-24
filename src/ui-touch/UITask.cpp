@@ -2295,8 +2295,16 @@ static uint32_t navTreeSig(lv_obj_t* obj, int depth) {
   if (!obj || depth > 7 || lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) || lv_obj_has_flag(obj, NAV_SKIP_FLAG)) return 0;
   uint32_t h = (uint32_t)(uintptr_t)obj * 2654435761u + (uint32_t)depth + 1u;
   uint32_t n = lv_obj_get_child_cnt(obj);
-  for (uint32_t i = 0; i < n; i++)
-    h = h * 2654435761u + navTreeSig(lv_obj_get_child(obj, i), depth + 1);
+  for (uint32_t i = 0; i < n; i++) {
+    lv_obj_t* c = lv_obj_get_child(obj, i);
+    // Skip the child ENTIRELY (don't even count it) when it's hidden or a passive NAV_SKIP
+    // overlay — returning 0 from the recursion wasn't enough, because merely iterating over an
+    // added/removed child still moves `h`. The accent box + @-mention picker are created and
+    // deleted on every keystroke, so counting them flips the signature → rebuild → edit-mode
+    // reset → typing breaks mid-word (and Esc then reads as "navigate back", exiting the screen).
+    if (!c || lv_obj_has_flag(c, LV_OBJ_FLAG_HIDDEN) || lv_obj_has_flag(c, NAV_SKIP_FLAG)) continue;
+    h = h * 2654435761u + navTreeSig(c, depth + 1);
+  }
   return h;
 }
 
