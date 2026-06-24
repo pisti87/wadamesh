@@ -1815,14 +1815,19 @@ static bool s_nav_ta_editing = false;
 
 static void navFocusCb(lv_group_t* g) {
   lv_obj_t* f = lv_group_get_focused(g);
-  // Edit mode on focus: the chat composer auto-edits (you opened the chat to type), and a
-  // field focused by a TOUCH tap edits immediately too — a touch user pointed right at it and
-  // shouldn't have to press Enter. Every OTHER field (reached with the letter-nav keys) starts
-  // in navigate mode so those keys keep working — press select/Enter to edit it. Esc/Enter on
-  // an empty composer drops it back to navigate mode (handled in navPump / handleHwKey).
-  lv_indev_t* act = lv_indev_get_act();   // the indev driving this focus change (null if programmatic)
-  const bool by_touch = act && lv_indev_get_type(act) == LV_INDEV_TYPE_POINTER;
-  s_nav_ta_editing = (f != nullptr && (by_touch || f == g_lv.ch.composer_ta || f == g_lv.dm.composer_ta));
+  // Edit mode — decided only on a GENUINE move to a different field. The chat composer
+  // auto-edits (you opened the chat to type), and a field focused by a TOUCH tap edits
+  // immediately too (you pointed right at it). Every OTHER field (reached with the letter-nav
+  // keys) starts in navigate mode so those keys keep working — press select/Enter to edit it.
+  // Crucially, a navMaybeRebuild() that re-focuses the SAME field (e.g. while the accent box is
+  // up) must NOT reset edit mode — otherwise it kicks you out of typing mid-word.
+  static lv_obj_t* s_nav_focus_prev = nullptr;
+  if (f != s_nav_focus_prev) {
+    lv_indev_t* act = lv_indev_get_act();   // the indev driving this focus change (null if programmatic)
+    const bool by_touch = act && lv_indev_get_type(act) == LV_INDEV_TYPE_POINTER;
+    s_nav_ta_editing = (f != nullptr && (by_touch || f == g_lv.ch.composer_ta || f == g_lv.dm.composer_ta));
+    s_nav_focus_prev = f;
+  }
   if (s_nav_styled && s_nav_styled != f) navUnstyle(s_nav_styled);
   s_nav_styled = nullptr;                  // old highlight (if any) is now restored; nothing styled yet
   if (!f || !s_nav_show) return;          // focus-visible: paint only while actively keyboard-navigating
@@ -2051,6 +2056,23 @@ static lv_obj_t* navFocusedTextarea() {
   if (!s_nav_group) return nullptr;
   lv_obj_t* f = lv_group_get_focused(s_nav_group);
   return (f && lv_obj_check_type(f, &lv_textarea_class)) ? f : nullptr;
+}
+
+// The text cursor is the reliable "you can type now" cue: show it only while editing, hide it
+// while a focused field is merely the keyboard-nav target. Synced each nav tick — the per-field
+// LV_PART_CURSOR opacity override is a no-op when unchanged, so it's cheap; the previous field's
+// cursor is restored when focus moves off it (so it reads normally outside keyboard-nav).
+static lv_obj_t* s_nav_cursor_ta    = nullptr;
+static bool      s_nav_cursor_shown = true;
+static void navSyncCursor() {
+  lv_obj_t* tf = navFocusedTextarea();
+  const bool want = (tf != nullptr) && s_nav_ta_editing;
+  if (tf == s_nav_cursor_ta && want == s_nav_cursor_shown) return;   // unchanged → nothing to do
+  if (s_nav_cursor_ta && s_nav_cursor_ta != tf && lv_obj_is_valid(s_nav_cursor_ta))
+    lv_obj_set_style_opa(s_nav_cursor_ta, LV_OPA_COVER, LV_PART_CURSOR);   // restore on leave
+  if (tf) lv_obj_set_style_opa(tf, want ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_CURSOR);
+  s_nav_cursor_ta    = tf;
+  s_nav_cursor_shown = want;
 }
 
 // Drain badge-bsp key events (called from UITask::loop). Focus-movement / activation
@@ -2295,6 +2317,7 @@ static LvChatPanel* s_nav_prev_chat = nullptr;   // last chat panel we focused (
 
 static void navMaybeRebuild() {
   if (!s_nav_group) return;
+  navSyncCursor();   // keep the text cursor showing only in edit mode (reliable "ready to type" cue)
   if (navOpenDropdown()) return;   // an open dropdown owns the group — rebuilding would close it
   lv_obj_t* scr = lv_scr_act();
   lv_obj_t* top = lv_layer_top();
@@ -2541,6 +2564,7 @@ static void refreshLogModalView();
 static void hideKb();
 static void accentExit();      // long-press accent picker (issue #22, dead on touch)
 static void accentBoxHide();   // tap-to-pick accent box (issue #22)
+static void mentionBoxHide();  // tap-to-pick @-mention contact picker (issue #42)
 static void txtMenuHide();     // cut/copy/paste/select-all edit menu
 static void showKb(LvChatPanel* p);
 static void closeSettingsModal();
@@ -3250,6 +3274,7 @@ static void kbMirrorBind(lv_obj_t* real_ta) {
 static void hideKb() {
   accentExit();   // tear down any open accent picker
   accentBoxHide();
+  mentionBoxHide();   // tear down any open @-mention picker
   txtMenuHide();   // tear down any open edit menu
   kbMirrorSyncToReal();
   s_kb_bind_ta = nullptr;
@@ -3638,6 +3663,127 @@ static void accentBoxMaybeShow() {
   lv_obj_move_foreground(s_accbox);
 }
 
+// ---- @-mention contact picker (issue #42) --------------------------------
+// Typing "@name" in a chat composer pops a touch list of matching contacts —
+// modeled on the accent box: a passive overlay (NAV_SKIP_FLAG) that never steals
+// keyboard-nav focus and, for now, is selected by TOUCH only. Tapping a row
+// replaces the "@partial" with "@FullName ".
+static lv_obj_t* s_mentionbox    = nullptr;
+static lv_obj_t* s_mentionbox_ta = nullptr;
+static constexpr int k_mention_max = 6;
+static char s_mention_names[k_mention_max][32];   // kept alive for the cell callbacks
+static void mentionBoxHide() {
+  if (s_mentionbox) { lv_obj_del(s_mentionbox); s_mentionbox = nullptr; }
+  s_mentionbox_ta = nullptr;
+}
+// Index of the active mention's '@' in `text`, or -1. The active mention is the
+// last '@' that begins a word (start of text or after whitespace) with no
+// whitespace between it and the end (where the caret is).
+static int mentionAtPos(const char* text) {
+  if (!text) return -1;
+  for (int i = (int)strlen(text) - 1; i >= 0; --i) {
+    const char c = text[i];
+    if (c == ' ' || c == '\n' || c == '\t') return -1;     // a space before any '@' -> not in a mention
+    if (c == '@') {
+      const bool at_word_start = (i == 0) || text[i-1] == ' ' || text[i-1] == '\n' || text[i-1] == '\t';
+      return at_word_start ? i : -1;                       // '@' mid-word (e.g. an email) isn't a mention
+    }
+  }
+  return -1;
+}
+static void mentionBoxCellCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  const char* name = static_cast<const char*>(lv_event_get_user_data(e));
+  lv_obj_t* ta = s_mentionbox_ta;
+  if (ta && name && name[0]) {
+    const char* text = lv_textarea_get_text(ta);
+    const int at = mentionAtPos(text);
+    if (at >= 0) {
+      char out[300];
+      snprintf(out, sizeof out, "%.*s@%s ", at, text, name);   // keep text before '@', then "@Name "
+      lv_textarea_set_text(ta, out);
+      if (ta == s_kb_mirror_ta) kbMirrorSyncToReal();
+    }
+  }
+  mentionBoxHide();
+}
+// Show the contact picker when the composer ends in "@partial". Returns true
+// when a picker is shown (so the caller suppresses the accent box).
+static bool mentionBoxMaybeShow() {
+  mentionBoxHide();
+  if (!g_lv.keyboard) return false;
+  lv_obj_t* ta = lv_keyboard_get_textarea(g_lv.keyboard);
+  if (!ta) return false;
+  const char* text = lv_textarea_get_text(ta);
+  const int at = mentionAtPos(text);
+  if (at < 0) return false;
+  const char* partial = text + at + 1;
+  const size_t plen = strlen(partial);
+  int n = 0;
+  const int total = the_mesh.getNumContacts();
+  for (int i = 0; i < total && n < k_mention_max; ++i) {
+    ContactInfo c;
+    if (!the_mesh.getContactByIdx(i, c) || !c.name[0]) continue;
+    if (plen > 0 && strncasecmp(c.name, partial, plen) != 0) continue;   // prefix match (case-insensitive)
+    strlcpy(s_mention_names[n], c.name, sizeof s_mention_names[n]);
+    ++n;
+  }
+  if (n == 0) return false;
+  s_mentionbox_ta = ta;
+  s_mentionbox = lv_obj_create(lv_layer_top());
+  lv_obj_add_flag(s_mentionbox, NAV_SKIP_FLAG);   // passive, touch-only — never a keyboard-nav stop (issue #42)
+  lv_obj_remove_style_all(s_mentionbox);
+  lv_obj_set_style_bg_color(s_mentionbox, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_mentionbox, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_radius(s_mentionbox, 8, LV_PART_MAIN);
+  lv_obj_set_style_border_color(s_mentionbox, lv_color_hex(0x2A3D52), LV_PART_MAIN);
+  lv_obj_set_style_border_width(s_mentionbox, 1, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(s_mentionbox, 4, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(s_mentionbox, 3, LV_PART_MAIN);
+  lv_obj_set_flex_flow(s_mentionbox, LV_FLEX_FLOW_COLUMN);
+  lv_obj_clear_flag(s_mentionbox, LV_OBJ_FLAG_SCROLLABLE);
+  const int rowh = 30, boxw = 168;
+  for (int i = 0; i < n; ++i) {
+    lv_obj_t* b = lv_btn_create(s_mentionbox);
+    lv_obj_add_flag(b, NAV_SKIP_FLAG);
+    lv_obj_set_size(b, boxw, rowh);
+    lv_obj_set_style_radius(b, 5, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(b, lv_color_hex(0x1B2B3A), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(b, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_add_event_cb(b, mentionBoxCellCb, LV_EVENT_CLICKED, (void*)s_mention_names[i]);
+    lv_obj_t* l = lv_label_create(b);
+    lv_label_set_text_fmt(l, "@%s", s_mention_names[i]);
+    lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(l, boxw - 18);
+    lv_obj_center(l);
+  }
+  lv_obj_set_size(s_mentionbox, boxw + 8, n * rowh + (n - 1) * 3 + 8);
+  // Place it above the composer, clamped above the keyboard (mirrors the accent box).
+  lv_obj_update_layout(s_mentionbox);
+  lv_area_t a; lv_obj_get_coords(ta, &a);
+  const lv_coord_t bw = lv_obj_get_width(s_mentionbox), bh = lv_obj_get_height(s_mentionbox);
+  lv_coord_t bx = (lv_disp_get_hor_res(nullptr) - bw) / 2;
+  lv_coord_t by = a.y1 - bh - 4;
+  if (g_lv.keyboard && !lv_obj_has_flag(g_lv.keyboard, LV_OBJ_FLAG_HIDDEN)) {
+    lv_coord_t limit = lv_disp_get_ver_res(nullptr) - chatKbH() - 2;
+    if (s_kb_panel) limit -= s_comp_h;
+    if (by + bh > limit) by = limit - bh;
+  }
+  if (by < STATUSBAR_H + 2) by = STATUSBAR_H + 2;
+  lv_obj_set_pos(s_mentionbox, bx, by);
+  lv_obj_move_foreground(s_mentionbox);
+  return true;
+}
+// One entry point for the composer's typing-time suggestion overlays: the
+// @-mention picker takes priority over the accent box (never both at once).
+static void composerSuggestRefresh() {
+  if (mentionBoxMaybeShow()) { accentBoxHide(); return; }
+  mentionBoxHide();
+  accentBoxMaybeShow();
+}
+
 static void keyboardCb(lv_event_t* e) {
   lv_event_code_t code = lv_event_get_code(e);
   if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL) { accentExit(); accentBoxHide(); hideKb(); }
@@ -3647,7 +3793,7 @@ static void keyboardCb(lv_event_t* e) {
   else if (code == LV_EVENT_VALUE_CHANGED) {
     kbSetRotateArrowsOpa(LV_OPA_20);
     accentHandleValueChanged();
-    accentBoxMaybeShow();   // letter with accents -> show the tap-to-pick box
+    composerSuggestRefresh();   // @mention contact picker, else the accent box
   }
 }
 
@@ -22932,7 +23078,7 @@ static void handleHwKey(int key) {
     } else {
       lv_textarea_add_char(ta, (uint32_t)key);
     }
-    accentBoxMaybeShow();   // letter with accents -> show the tap-to-pick box
+    composerSuggestRefresh();   // @mention contact picker, else the accent box
   }
   if (g_lv.task) g_lv.task->noteUserInput();
 }
