@@ -3174,7 +3174,7 @@ static void kbSetRotateArrowsOpa(lv_opa_t opa) {
 // a little key showing the active layout's 2-letter code; tapping it cycles
 // English -> each enabled secondary layout -> back, like the T-Deck's SPACE.
 static const char* kbLayoutCode(KeyboardLayoutId id) {
-  static const char* k_codes[] = { "EN", "BG", "RU", "UK", "SR", "EL", "AR" };
+  static const char* k_codes[] = { "EN", "BG", "RU", "UK", "SR", "EL", "AR", "FR", "NL", "DE", "ES", "IT" };
   const uint8_t i = static_cast<uint8_t>(id);
   return (i < (sizeof k_codes / sizeof k_codes[0])) ? k_codes[i] : "EN";
 }
@@ -3189,6 +3189,41 @@ static void kbLangCycleCb(lv_event_t* e) {
 #endif
   kbLangBtnRefresh();
   if (g_lv.task) g_lv.task->showAlert(keyboardLayoutName(next), 800);
+}
+
+// Picking a UI language auto-enables + selects the matching keyboard layout (so choosing French
+// gives AZERTY without a separate trip to keyboard settings). EU layouts via #29 (samuelcoustet).
+static KeyboardLayoutId kbDefaultLayoutForUiLang(uint8_t lang) {
+  switch (lang) {
+    case LANG_NL: return KeyboardLayoutId::NL;
+    case LANG_DE: return KeyboardLayoutId::DE;
+    case LANG_ES: return KeyboardLayoutId::ES;
+    case LANG_IT: return KeyboardLayoutId::IT;
+    case LANG_BG: return KeyboardLayoutId::BG;
+    case LANG_RU: return KeyboardLayoutId::RU;
+    case LANG_UK: return KeyboardLayoutId::UK;
+    case LANG_SR: return KeyboardLayoutId::SR;
+    case LANG_EL: return KeyboardLayoutId::EL;
+    case LANG_FR: return KeyboardLayoutId::FR;
+    default:      return KeyboardLayoutId::EN;
+  }
+}
+static void kbApplyUiLangDefault(uint8_t lang) {
+  KeyboardLayoutId target = kbDefaultLayoutForUiLang(lang);
+  uint32_t mask = keyboardLayoutsGetEnabledMask();
+  const uint8_t target_id = static_cast<uint8_t>(target);
+  if (target != KeyboardLayoutId::EN && !(mask & (1u << target_id))) {
+    mask |= (1u << target_id);
+    keyboardLayoutsSetEnabledMask(mask);
+#if defined(ESP32)
+    touchPrefsSetEnabledLayouts(static_cast<uint16_t>(mask));
+#endif
+  }
+  if (g_lv.keyboard) keyboardLayoutsApply(g_lv.keyboard, target);
+#if defined(ESP32)
+  touchPrefsSetKeyboardLayout(target_id);
+#endif
+  kbLangBtnRefresh();
 }
 
 static void kbShowRotateArrows(bool show) {
@@ -7660,9 +7695,11 @@ static void buildDeviceSettings(int sec) {
     uint16_t en_mask = 0;
 #endif
     /* One row per non-English layout; index id-1 into the display names.
-       Keep in KeyboardLayoutId order (BG=1 .. AR=6). */
+       Keep in KeyboardLayoutId order (BG=1 .. IT=11). MUST have one entry per
+       non-EN layout or the loop below reads past the end. */
     static const char* k_kb_disp[] = {
-      "Bulgarian", "Russian", "Ukrainian", "Serbian", "Greek", "Arabic (experimental)"
+      "Bulgarian", "Russian", "Ukrainian", "Serbian", "Greek", "Arabic (experimental)",
+      "French", "Dutch", "German", "Spanish", "Italian"
     };
     for (int id = 1; id < KEYBOARD_LAYOUT_COUNT; ++id) {
       int h = settingsRowLabel(body, y, 4, k_kb_disp[id - 1], COLOR_TEXT, &g_font_12, 56);
@@ -19665,6 +19702,7 @@ static void langChosenCb(lv_event_t* e) {
   touchPrefsSetUiLang(lang);
 #endif
   i18nSetLang(lang);
+  kbApplyUiLangDefault(lang);   // auto-enable + select the matching keyboard layout for this UI language
   if (g_lv.task) g_lv.task->rebootDevice();
 }
 
