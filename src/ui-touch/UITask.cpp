@@ -4811,6 +4811,13 @@ static void settingsFieldFocusCb(lv_event_t* e) {
   s_kb_panel = nullptr;
   kbMirrorBind(ta);
   noteKbActivity();   // focusing/tapping a field lights the auto backlight
+#if defined(HAS_TANMATSU) || defined(HAS_TDECK_TRACKBALL)
+  // A deliberate TAP enters edit mode immediately — even when the field was already the
+  // selected (nav-focused) one, where no focus change fires navFocusCb (so tapping it again
+  // wouldn't otherwise make it typable). CLICKED only fires on a real tap (past the scroll
+  // guards above); keyboard-nav onto a field still starts in navigate mode (press Enter).
+  if (code == LV_EVENT_CLICKED) s_nav_ta_editing = true;
+#endif
 }
 
 #if defined(HAS_TDECK_KEYBOARD)
