@@ -30038,6 +30038,29 @@ void UITask::newRoomMsgFromPubWithMeta(uint8_t path_len, bool is_flood,
   syncThreadMeshSlots(from_name, false);
 }
 
+void UITask::appSentMsgToContact(const uint8_t* to_pub, const char* to_name, const char* text,
+                                 uint32_t ack_hash) {
+  if (!to_name || !to_name[0] || !text || !text[0]) return;
+  const char* sender = (_node_prefs && _node_prefs->node_name[0]) ? _node_prefs->node_name : "me";
+  // Mirror an app-originated DM as a local outgoing bubble in the recipient's thread (#46) — the
+  // on-device UI is otherwise the only message consumer that never sees sends made from the
+  // companion app. appendMessage creates the thread if it doesn't exist and refreshes the view.
+  appendMessage(to_name, sender, text, false /*channel*/, true /*outgoing*/, false /*mark_unread*/,
+                ack_hash, DELIV_SENT);
+  // Lock the thread to the contact's pubkey so a reply typed on-device resolves it (mirrors the
+  // receive path above).
+  const int t = findThreadByName(to_name, false);
+  if (t < 0 || !to_pub) return;
+  _ui_threads[t].mesh_contact_idx = -1;
+  memcpy(_ui_threads[t].mesh_contact_pub, to_pub, PUB_KEY_SIZE);
+  memcpy(_ui_threads[t].mesh_contact_key6, to_pub, 6);
+  if (!_ui_threads[t].channel && t == _active_thread_idx) {
+    _active_dm_contact_set = true;
+    memcpy(_active_dm_contact_pub, to_pub, sizeof(_active_dm_contact_pub));
+  }
+  syncThreadMeshSlots(to_name, false);
+}
+
 void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) {
   newMsgImpl(path_len, from_name, text, msgcount, 0 /*meta_flags*/, 0 /*snr*/, 0 /*rssi*/);
 }

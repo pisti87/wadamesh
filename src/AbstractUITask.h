@@ -86,6 +86,14 @@ public:
     (void)author_name;
     newMsgFromPubWithMeta(path_len, is_flood, from_pub, from_name, text, msgcount, snr_q4, rssi);
   }
+  /** A message the COMPANION APP sent on our behalf (CMD_SEND_TXT_MSG). The wire protocol
+   *  deliberately doesn't echo sent messages back to clients, so the on-device UI is otherwise
+   *  the only consumer that never sees app-originated sends — this lets it mirror one as a local
+   *  outgoing bubble so it shows on-device too (issue #46). Default no-op for non-touch UIs. */
+  virtual void appSentMsgToContact(const uint8_t* to_pub, const char* to_name, const char* text,
+                                   uint32_t ack_hash) {
+    (void)to_pub; (void)to_name; (void)text; (void)ack_hash;
+  }
   virtual void notify(UIEventType t = UIEventType::none) = 0;
   virtual void appendDiag(const char* message) { (void)message; }
   /** Notify UI of an advert reception. `is_new=true` means the contact is NOT in

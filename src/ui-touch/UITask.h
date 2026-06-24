@@ -409,6 +409,8 @@ public:
                                  const char* author_name,
                                  const char* text, int msgcount,
                                  int8_t snr_q4, int8_t rssi) override;
+  void appSentMsgToContact(const uint8_t* to_pub, const char* to_name, const char* text,
+                           uint32_t ack_hash) override;
   void notify(UIEventType t = UIEventType::none) override;
   void logRxFrame(float snr, float rssi, const uint8_t* raw, int len) override;
   void discoveredContact(const ContactInfo& contact, bool is_new, uint8_t path_len) override;

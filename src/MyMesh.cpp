@@ -2850,6 +2850,10 @@ void MyMesh::handleCmdFrame(size_t len) {
         memcpy(&out_frame[2], &expected_ack, 4);
         memcpy(&out_frame[6], &est_timeout, 4);
         _serial->writeFrame(out_frame, 10);
+        // Mirror the app-sent DM into the on-device touch UI so it shows there too (#46). First
+        // handling only — a transport/client retry (skip_radio_send) was already mirrored.
+        if (_ui && !skip_radio_send && recipient)
+          _ui->appSentMsgToContact(recipient->id.pub_key, recipient->name, text, expected_ack);
 
         // Do not synthesize a private-message "recv" frame from self. That frame has no recipient
         // context and can be rendered by clients as a chat with self.
