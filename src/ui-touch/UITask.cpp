@@ -1822,7 +1822,7 @@ static void navFocusCb(lv_group_t* g) {
   // Crucially, a navMaybeRebuild() that re-focuses the SAME field (e.g. while the accent box is
   // up) must NOT reset edit mode — otherwise it kicks you out of typing mid-word.
   static lv_obj_t* s_nav_focus_prev = nullptr;
-  if (f != s_nav_focus_prev) {
+  if (f && f != s_nav_focus_prev) {   // ignore the transient f==null a rebuild's remove-all emits
     lv_indev_t* act = lv_indev_get_act();   // the indev driving this focus change (null if programmatic)
     const bool by_touch = act && lv_indev_get_type(act) == LV_INDEV_TYPE_POINTER;
     s_nav_ta_editing = (f != nullptr && (by_touch || f == g_lv.ch.composer_ta || f == g_lv.dm.composer_ta));
@@ -2289,7 +2289,10 @@ static void navMarkDirty() { s_nav_dirty = true; }
 // wizard steps that swap content without changing the top-level child count (a plain
 // child-count signature missed those, leaving the focus group empty after a step swap).
 static uint32_t navTreeSig(lv_obj_t* obj, int depth) {
-  if (!obj || depth > 7 || lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) return 0;
+  // Skip NAV_SKIP_FLAG overlays (accent box, @-mention picker): they're not nav targets, so
+  // their appearing/disappearing must NOT change the signature and trigger a rebuild — that
+  // rebuild's remove-all + re-focus churn would reset edit mode and break typing mid-word.
+  if (!obj || depth > 7 || lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) || lv_obj_has_flag(obj, NAV_SKIP_FLAG)) return 0;
   uint32_t h = (uint32_t)(uintptr_t)obj * 2654435761u + (uint32_t)depth + 1u;
   uint32_t n = lv_obj_get_child_cnt(obj);
   for (uint32_t i = 0; i < n; i++)
