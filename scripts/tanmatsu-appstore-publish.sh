@@ -82,9 +82,17 @@ cp "$WADAMESH/LICENSE" "$APP/LICENSE"
 cp "$WADAMESH/NOTICE"  "$APP/NOTICE"      # MeshCore (MIT) + other third-party attribution
 cp "$BIN" "$APP/wadamesh.bin"
 python3 - "$TPL/metadata.json" "$APP/metadata.json" "$VERSION" "$REVISION" <<'PY'
-import json, sys
+import json, sys, re
 src, dst, ver, rev = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
 m = json.load(open(src))
+# The launcher store's verify_metadata check restricts name/description to this set
+# (NO commas, NO em-dash). Fail loudly HERE instead of as a red check on the PR.
+pat = r'^[A-Za-z0-9_\- .!@#$%^&*()\/\\]+$'
+for f in ("name", "description"):
+    v = m.get(f, "")
+    if not re.match(pat, v) or len(v) > 256:
+        sys.stderr.write(f"!! metadata '{f}' fails the store regex (no comma / em-dash, <=256 chars): {v!r}\n")
+        sys.exit(1)
 m["version"] = ver
 for app in m["application"]:
     app["revision"] = rev
