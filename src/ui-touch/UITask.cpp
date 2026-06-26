@@ -17452,6 +17452,18 @@ static void tileFetchMarkSeen(uint8_t z, int32_t x, int32_t y) {
   s_tile_fetch_dedup[s_tile_fetch_dedup_head] = tileFetchDedupKey(z, x, y);
   s_tile_fetch_dedup_head = (s_tile_fetch_dedup_head + 1) % k_tile_fetch_dedup_size;
 }
+// Drop a tile's "seen" mark so the next render miss re-queues it. The fetch task
+// marks a tile seen the instant it's queued; if the download then fails for a
+// TRANSIENT reason (heap gate while the render thread is decoding — the common
+// case mid-pan — or Wi-Fi blip / cache full / proxy 5xx / timeout), the stale
+// mark would otherwise pin the tile "downloading" forever and leave the visible
+// edges/corners blank until a manual "reload tiles". Forgetting it re-arms the
+// retry. (#20)
+static void tileFetchForget(uint8_t z, int32_t x, int32_t y) {
+  const uint32_t k = tileFetchDedupKey(z, x, y);
+  for (int i = 0; i < k_tile_fetch_dedup_size; ++i)
+    if (s_tile_fetch_dedup[i] == k) s_tile_fetch_dedup[i] = 0;
+}
 #endif  // MULTI_TRANSPORT_COMPANION
 #endif  // ESP32
 
@@ -18015,6 +18027,7 @@ static void tileFetchTaskFn(void* arg) {
       s_tile_fetch_step = '!';
       s_tile_fetch_last_wr = 'W';
       ++s_tile_fetch_failed;
+      tileFetchForget(req.z, req.x, req.y);   // transient — re-arm for retry once Wi-Fi is back (#20)
       if (s_tile_fetch_pending > 0) --s_tile_fetch_pending;
       continue;
     }
@@ -18068,10 +18081,14 @@ static void tileFetchTaskFn(void* arg) {
         ++waits;
       }
       if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) < 12 * 1024) {
-        // Still too tight — skip this tile; it'll be re-requested on the
-        // next render miss. Keep counters coherent.
+        // Still too tight — skip this tile. Forget it so the next render miss
+        // actually re-queues it (the dedup mark would otherwise pin it blank
+        // until a manual reload — the #20 edges-don't-load-on-pan symptom, since
+        // the heap gate trips most often while the render thread decodes a pan
+        // burst). Keep counters coherent.
         s_tile_fetch_last_wr = 'H';
         ++s_tile_fetch_failed;
+        tileFetchForget(req.z, req.x, req.y);
         if (s_tile_fetch_pending > 0) --s_tile_fetch_pending;
         continue;
       }
@@ -18082,6 +18099,7 @@ static void tileFetchTaskFn(void* arg) {
     if (tilesFsLowSpace()) {
       s_tile_fetch_last_wr = 'S';
       ++s_tile_fetch_failed;
+      tileFetchForget(req.z, req.x, req.y);   // transient — retry after space frees (#20)
       if (s_tile_fetch_pending > 0) --s_tile_fetch_pending;
       continue;
     }
@@ -18199,6 +18217,14 @@ static void tileFetchTaskFn(void* arg) {
     } else {
       WIRE_DBG("[TILE]  -> FAILED %s\n", path_jpg);
       ++s_tile_fetch_failed;
+      // Re-arm a failed fetch for retry UNLESS the server gave a permanent
+      // rejection (a 4xx — the tile genuinely isn't there at this z/x/y). Every
+      // other failure here is transient — a negative HTTPClient code (connect/
+      // read timeout), a proxy 5xx, a rate-limit (408/429), or a disk write
+      // hiccup at HTTP 200 — and must drop the "seen" mark or the visible tile
+      // stays blank until a manual reload (#20). 408/429 are 4xx but retryable.
+      const bool permanent = (code >= 400 && code < 500 && code != 408 && code != 429);
+      if (!permanent) tileFetchForget(req.z, req.x, req.y);
     }
 
     // Give core 1 a clear window (socket closed = ~8 KB more internal
