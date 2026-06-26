@@ -17033,6 +17033,12 @@ static void ctDeleteSelCb(lv_event_t* e){
 }
 
 static void ctSortSheetClose(){ if(s_ct_sort_sheet){ lv_obj_del_async(s_ct_sort_sheet); s_ct_sort_sheet=nullptr; } }
+// X badge handler: close UNCONDITIONALLY. (The backdrop cb below only closes when
+// the tap target is the backdrop itself — correct for the backdrop, but that guard
+// made the close-X a no-op when its tap registered on the badge's glyph child.)
+static void ctSortSheetCloseCb(lv_event_t* e){
+  if(lv_event_get_code(e)==LV_EVENT_CLICKED) ctSortSheetClose();
+}
 static void ctSortSheetBackdropCb(lv_event_t* e){
   if(lv_event_get_code(e)!=LV_EVENT_CLICKED) return;
   if(lv_event_get_target(e)==lv_event_get_current_target(e)) ctSortSheetClose();   // backdrop tap only
@@ -17075,7 +17081,7 @@ static void ctSortOptCb(lv_event_t* e){
   if(m == g_contacts_sort) g_contacts_sort_desc = !g_contacts_sort_desc;   // re-tap the active mode = flip asc/desc
   else { g_contacts_sort = m; g_contacts_sort_desc = false; }              // new mode = its natural order
   s_ct_list_force = true; refreshContactsList();
-  ctSortRowsRepaint();   // keep the sheet open so the direction arrow is visible + re-tappable
+  ctSortSheetClose();   // apply + dismiss; re-open and tap the active row again to flip its direction
 }
 static void ctFilterOptCb(lv_event_t* e){
   if(lv_event_get_code(e)!=LV_EVENT_CLICKED) return;
@@ -17137,7 +17143,7 @@ static lv_obj_t* ctOpenOptionSheet(const char* title){
   lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_scroll_dir(card, LV_DIR_VER);
   lv_obj_add_flag(card, LV_OBJ_FLAG_GESTURE_BUBBLE);   // swipes on the card reach the sheet's swipe-to-close
-  addCloseXBadge(card, ctSortSheetBackdropCb);
+  addCloseXBadge(card, ctSortSheetCloseCb);   // X always closes (not the backdrop's tap-target guard)
   lv_obj_t* ttl = lv_label_create(card);
   lv_label_set_text(ttl, TR(title));
   lv_obj_set_style_text_color(ttl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
