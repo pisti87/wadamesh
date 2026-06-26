@@ -87,6 +87,7 @@
   #include "KeyboardLayouts.h"
   #include "i18n.h"
   #include "emoji_data.h"     // baked Noto colour-emoji glyphs (emojiGlyphLookup)
+  #include "qr_icon.h"        // baked recolour-able QR glyph (qr_icon_dsc) for the Chats Share button
   #if defined(HAS_TANMATSU)
     #include <TanmatsuDisplay.h>             // badge-bsp-backed DisplayDriver (P4)
   #else
@@ -840,18 +841,35 @@ enum ContactsSortMode : uint8_t {
   CONTACTS_SORT_AZ          = 0,  // alphabetical
   CONTACTS_SORT_LAST_HEARD  = 1,  // most recent advert first (default)
   CONTACTS_SORT_LAST_MSG    = 2,  // most recent message first (falls back to last-heard)
-  CONTACTS_SORT_COUNT       = 3,
+  CONTACTS_SORT_DISTANCE    = 3,  // nearest first; rows with no shared location are excluded
+  CONTACTS_SORT_COUNT       = 4,
 };
 // Default to most-recently-heard at the top — operators care who's on the
 // air now far more than alphabetical order. Favorites still pin above all
 // (see the qsort comparator in refreshContactsList).
 static uint8_t g_contacts_sort = CONTACTS_SORT_LAST_HEARD;
+// Reverse the active sort's natural order (the asc/desc toggle). Natural order is
+// A→Z / newest-heard / newest-message / nearest; `desc` flips just the primary key
+// (favourites stay pinned on top, "?"-heard rows stay sunk). Reset when the mode
+// changes; re-tapping the active mode in the Sort sheet flips it.
+static bool    g_contacts_sort_desc = false;
 
 static const char* contactsSortLabel(uint8_t m) {
   switch (m) {
     case CONTACTS_SORT_AZ:         return "A-Z";
     case CONTACTS_SORT_LAST_HEARD: return "RECENT";
     case CONTACTS_SORT_LAST_MSG:   return "MSG";
+    case CONTACTS_SORT_DISTANCE:   return "DIST";
+  }
+  return "?";
+}
+// Long form for the Sort sheet rows.
+static const char* contactsSortOptName(uint8_t m) {
+  switch (m) {
+    case CONTACTS_SORT_AZ:         return "Name (A-Z)";
+    case CONTACTS_SORT_LAST_HEARD: return "Recently heard";
+    case CONTACTS_SORT_LAST_MSG:   return "Recent message";
+    case CONTACTS_SORT_DISTANCE:   return "Nearest first";
   }
   return "?";
 }
@@ -5088,6 +5106,9 @@ static const char* const k_emoji_items[] = {
   // animals
   "\xF0\x9F\x90\xB6","\xF0\x9F\x90\xB1","\xF0\x9F\x90\xB8","\xF0\x9F\x90\xBB",
   "\xF0\x9F\x90\xA7","\xF0\x9F\x90\x9D",
+  // activity / flags  (soccer, football, moai, transgender flag)
+  "\xE2\x9A\xBD","\xF0\x9F\x8F\x88","\xF0\x9F\x97\xBF",
+  "\xF0\x9F\x8F\xB3\xEF\xB8\x8F\xE2\x80\x8D\xE2\x9A\xA7\xEF\xB8\x8F",
   // special characters / punctuation / currency / math
   "\xE2\x80\x94","\xE2\x80\xA6","\xE2\x80\x9C","\xE2\x80\x9D","\xE2\x80\x98",
   "\xE2\x80\x99","\xE2\x86\x92","\xE2\x86\x90","\xC2\xB0","\xC2\xB1",
@@ -6461,6 +6482,52 @@ static DiscoveredAddCtx s_disc_add_ctx[DISCOVERED_MAX];
 // Forward declared so discoveredAddCb can re-open the list after a successful add.
 static void openDiscoveredModalCb(lv_event_t* e);
 
+// ---- Discovered-list sort (mirrors the Contacts sort) -------------------------
+// Recently heard / Name / Distance, each with an ascending/descending toggle.
+// "Recent message" is contacts-only (discovered nodes have no message history) so
+// it's omitted. Distance excludes entries that have shared no location.
+enum DiscSortMode : uint8_t {
+  DISC_SORT_RECENT   = 0,   // newest advert first (default)
+  DISC_SORT_AZ       = 1,   // name A-Z
+  DISC_SORT_DISTANCE = 2,   // nearest first; no-location entries excluded
+  DISC_SORT_COUNT    = 3,
+};
+static uint8_t g_disc_sort      = DISC_SORT_RECENT;
+static bool    g_disc_sort_desc = false;
+static const char* discSortOptName(uint8_t m) {
+  switch (m) {
+    case DISC_SORT_RECENT:   return "Recently heard";
+    case DISC_SORT_AZ:       return "Name (A-Z)";
+    case DISC_SORT_DISTANCE: return "Nearest first";
+  }
+  return "?";
+}
+// True if discovered entry ia sorts before ib for the current mode + direction.
+// `prim` < 0 = a before b in the mode's natural order; g_disc_sort_desc flips it.
+static bool discSortBefore(int ia, int ib, double self_lat, double self_lon) {
+  const LvDiscoveredEntry& A = s_discovered[ia];
+  const LvDiscoveredEntry& B = s_discovered[ib];
+  int prim = 0;
+  switch (g_disc_sort) {
+    case DISC_SORT_DISTANCE: {
+      const double da = contactDistanceKm(self_lat, self_lon, A.ci.gps_lat / 1.0e6, A.ci.gps_lon / 1.0e6);
+      const double db = contactDistanceKm(self_lat, self_lon, B.ci.gps_lat / 1.0e6, B.ci.gps_lon / 1.0e6);
+      if (da < db) prim = -1; else if (da > db) prim = 1;
+      break;
+    }
+    case DISC_SORT_AZ:
+      prim = strcasecmp(A.ci.name, B.ci.name);
+      break;
+    default:   // DISC_SORT_RECENT — newest first
+      if (A.recv_ms != B.recv_ms) prim = (A.recv_ms > B.recv_ms) ? -1 : 1;
+      break;
+  }
+  if (prim == 0) prim = strcasecmp(A.ci.name, B.ci.name);   // tiebreak by name
+  if (g_disc_sort_desc) prim = -prim;
+  return prim < 0;
+}
+static void openDiscSortSheetCb(lv_event_t* e);   // sort button -> sheet (defined with the Contacts sheets)
+
 static void discoveredAddCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   auto* ctx = static_cast<DiscoveredAddCtx*>(lv_event_get_user_data(e));
@@ -6657,17 +6724,23 @@ static void openDiscoveredModalCb(lv_event_t* e) {
     }
   }
 
-  // Sort indices by recv_ms desc so newest is first.
+  // Collect the not-yet-contact discovered slots, then sort by the selected mode.
+  const double disc_self_lat = g_lv.task ? g_lv.task->getNodeLat() : 0.0;
+  const double disc_self_lon = g_lv.task ? g_lv.task->getNodeLon() : 0.0;
   int order[DISCOVERED_MAX];
   int n = 0;
   for (int i = 0; i < DISCOVERED_MAX; ++i) {
-    if (s_discovered[i].used && !s_discovered[i].in_contacts) order[n++] = i;
+    if (!(s_discovered[i].used && !s_discovered[i].in_contacts)) continue;
+    // Distance sort needs a location — exclude entries with none from the results.
+    if (g_disc_sort == DISC_SORT_DISTANCE &&
+        s_discovered[i].ci.gps_lat == 0 && s_discovered[i].ci.gps_lon == 0) continue;
+    order[n++] = i;
   }
-  // simple insertion sort by recv_ms desc
+  // Insertion sort honouring g_disc_sort + the asc/desc flip (default: newest first).
   for (int i = 1; i < n; ++i) {
     int v = order[i];
     int j = i - 1;
-    while (j >= 0 && s_discovered[order[j]].recv_ms < s_discovered[v].recv_ms) {
+    while (j >= 0 && discSortBefore(v, order[j], disc_self_lat, disc_self_lon)) {
       order[j + 1] = order[j];
       --j;
     }
@@ -6716,6 +6789,24 @@ static void openDiscoveredModalCb(lv_event_t* e) {
       "Anything heard over the air that isn't in your contacts will show up "
       "here. When auto-add is off, you can manually add nodes to your contacts.");
     return;
+  }
+
+  // Sort control — opens a small sheet (mirrors the Contacts sort). Tapping the
+  // active option again flips ascending/descending; the arrow shows the direction.
+  {
+    lv_obj_t* sb = lv_btn_create(body);
+    lv_obj_set_size(sb, s_settings_content_w, SC(28));
+    lv_obj_set_pos(sb, 0, y);
+    styleButton(sb);
+    lv_obj_add_event_cb(sb, openDiscSortSheetCb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* sl = lv_label_create(sb);
+    lv_label_set_text_fmt(sl, "%s  %s  %s", LV_SYMBOL_SHUFFLE,
+                          TR(discSortOptName(g_disc_sort)),
+                          g_disc_sort_desc ? LV_SYMBOL_UP : LV_SYMBOL_DOWN);
+    lv_obj_set_style_text_color(sl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(sl, &g_font_14, LV_PART_MAIN);
+    lv_obj_center(sl);
+    y += SC(34);
   }
 
   for (int k = 0; k < n; ++k) {
@@ -16505,14 +16596,19 @@ static void makeChatList(lv_obj_t* tab, LvChatPanel& p, bool channel_mode, bool 
   styleSurface(tab, COLOR_BG, 0);
   lv_obj_set_style_pad_all(tab, 0, LV_PART_MAIN);
 
-  // Inbox tab (the only one that gets a "+" button) has a 32-pixel header
-  // row with the add-channel button at the right; the list sits below.
-  // The DM-detail panel (channel_mode + non-combined) stays full-height.
+  // Inbox tab (the only one that gets these buttons) has a 32-pixel header row.
+  // The three actions are grouped at the LEFT edge, reading [+ add | ✓ mark-read |
+  // QR share] (requested layout); the list sits below. The DM-detail panel
+  // (channel_mode + non-combined) stays full-height.
   const int hdr_h = inbox_combined ? 32 : 0;
   if (inbox_combined) {
+    const int BW = 34, BH = 28, GAP = 4, X0 = 4;   // button geometry; slot N at X0 + N*(BW+GAP)
+    auto hdrBtnX = [&](int slot) { return X0 + slot * (BW + GAP); };
+
+    // [+] Add channel / DM — primary action, green. Leftmost.
     lv_obj_t* add_btn = lv_btn_create(tab);
-    lv_obj_set_size(add_btn, 34, 28);
-    lv_obj_set_pos(add_btn, tabContentW() - 34 - 4, 2);
+    lv_obj_set_size(add_btn, BW, BH);
+    lv_obj_set_pos(add_btn, hdrBtnX(0), 2);
     styleButton(add_btn);
     lv_obj_set_style_bg_color(add_btn, lv_color_hex(COLOR_STATUS_OK), LV_PART_MAIN);
     lv_obj_set_style_bg_color(add_btn, lv_color_hex(0x3B7039), LV_PART_MAIN | LV_STATE_PRESSED);
@@ -16523,10 +16619,10 @@ static void makeChatList(lv_obj_t* tab, LvChatPanel& p, bool channel_mode, bool 
     lv_obj_set_style_text_font(l, &g_font_16, LV_PART_MAIN);
     lv_obj_center(l);
 
-    // "Mark all as read" (✓) — sits just left of the + button.
+    // [✓] Mark all chats + channels as read. Middle.
     lv_obj_t* mar_btn = lv_btn_create(tab);
-    lv_obj_set_size(mar_btn, 34, 28);
-    lv_obj_set_pos(mar_btn, tabContentW() - 34 - 4 - 34 - 4, 2);
+    lv_obj_set_size(mar_btn, BW, BH);
+    lv_obj_set_pos(mar_btn, hdrBtnX(1), 2);
     styleButton(mar_btn);
     lv_obj_add_event_cb(mar_btn, chatsMarkAllReadBtnCb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* ml = lv_label_create(mar_btn);
@@ -16535,23 +16631,20 @@ static void makeChatList(lv_obj_t* tab, LvChatPanel& p, bool channel_mode, bool 
     lv_obj_set_style_text_font(ml, &g_font_14, LV_PART_MAIN);
     lv_obj_center(ml);
 
-    // "Share my contact" QR — mirrors the + button on the LEFT edge so
-    // the header reads as [share | ... | add]. Tapping opens a popup with
-    // a QR encoding our pubkey + node name, scan-friendly by other
-    // meshcomod / MeshCore touch firmware.
+    // [QR] Share my contact — opens a popup with a QR encoding our pubkey + node
+    // name (scan-friendly by other MeshCore clients). Rightmost of the group. Draws
+    // the baked qr_icon_dsc recoloured to the text colour — a real QR glyph instead
+    // of the old LV_SYMBOL_IMAGE "picture" stand-in.
     lv_obj_t* qr_btn = lv_btn_create(tab);
-    lv_obj_set_size(qr_btn, 34, 28);
-    lv_obj_set_pos(qr_btn, 4, 2);
+    lv_obj_set_size(qr_btn, BW, BH);
+    lv_obj_set_pos(qr_btn, hdrBtnX(2), 2);
     styleButton(qr_btn);
     lv_obj_add_event_cb(qr_btn, shareMyContactBtnCb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t* ql = lv_label_create(qr_btn);
-    // No bundled QR glyph in Montserrat — LV_SYMBOL_IMAGE reads as a
-    // "scan / square code" enough for the purpose. Could be swapped for
-    // a custom font subset if it grates.
-    lv_label_set_text(ql, LV_SYMBOL_IMAGE);
-    lv_obj_set_style_text_color(ql, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
-    lv_obj_set_style_text_font(ql, &g_font_14, LV_PART_MAIN);
-    lv_obj_center(ql);
+    lv_obj_t* qimg = lv_img_create(qr_btn);
+    lv_img_set_src(qimg, &qr_icon_dsc);
+    lv_obj_set_style_img_recolor(qimg, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_img_recolor_opa(qimg, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_center(qimg);
   }
 
   p.list_cont = lv_list_create(tab);
@@ -16716,7 +16809,7 @@ static lv_obj_t* s_ct_sort_sheet  = nullptr; // Sort & filter overlay
 static lv_obj_t* s_ct_normal_bar  = nullptr; // header toolbar shown in normal mode
 static lv_obj_t* s_ct_select_bar  = nullptr; // header toolbar shown in select mode
 static lv_obj_t* s_ct_del_btn     = nullptr; // "Delete (N)" button in the select bar
-static lv_obj_t* s_ct_sort_btns[3]   = { nullptr, nullptr, nullptr };
+static lv_obj_t* s_ct_sort_btns[CONTACTS_SORT_COUNT] = { nullptr, nullptr, nullptr, nullptr };
 static lv_obj_t* s_ct_filter_btns[6] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 static lv_obj_t* s_ct_filter_btn_lbl = nullptr;   // header Filter button label (shows the active filter)
 static lv_obj_t* s_ct_disc_badge     = nullptr;   // count badge on the header Discovered button
@@ -16956,14 +17049,33 @@ static void ctPaintOpt(lv_obj_t* b, bool active){
   lv_obj_set_style_border_width(b, active ? 1 : 0, LV_PART_MAIN);
 }
 static void ctSheetRepaint(){
-  for(int i=0;i<3;++i) ctPaintOpt(s_ct_sort_btns[i], g_contacts_sort==(uint8_t)i);
+  for(int i=0;i<CONTACTS_SORT_COUNT;++i) ctPaintOpt(s_ct_sort_btns[i], g_contacts_sort==(uint8_t)i);
   for(int i=0;i<6;++i) ctPaintOpt(s_ct_filter_btns[i], g_lv.contacts_filter==(uint8_t)i);
+}
+// Repaint the Sort sheet rows: highlight the active mode and show its direction
+// arrow (▼ = the mode's natural order, ▲ = reversed). Labels are pulled from
+// contactsSortOptName so the active row gains/loses its trailing arrow live.
+static void ctSortRowsRepaint(){
+  for(int i=0;i<CONTACTS_SORT_COUNT;++i){
+    lv_obj_t* b = s_ct_sort_btns[i];
+    if(!b) continue;
+    const bool active = (g_contacts_sort==(uint8_t)i);
+    ctPaintOpt(b, active);
+    lv_obj_t* l = lv_obj_get_child(b, 0);
+    if(l){
+      if(active) lv_label_set_text_fmt(l, "%s  %s", TR(contactsSortOptName((uint8_t)i)),
+                                       g_contacts_sort_desc ? LV_SYMBOL_UP : LV_SYMBOL_DOWN);
+      else       lv_label_set_text(l, TR(contactsSortOptName((uint8_t)i)));
+    }
+  }
 }
 static void ctSortOptCb(lv_event_t* e){
   if(lv_event_get_code(e)!=LV_EVENT_CLICKED) return;
-  g_contacts_sort = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
+  const uint8_t m = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
+  if(m == g_contacts_sort) g_contacts_sort_desc = !g_contacts_sort_desc;   // re-tap the active mode = flip asc/desc
+  else { g_contacts_sort = m; g_contacts_sort_desc = false; }              // new mode = its natural order
   s_ct_list_force = true; refreshContactsList();
-  ctSortSheetClose();   // a sort is a single choice — apply it and dismiss the sheet
+  ctSortRowsRepaint();   // keep the sheet open so the direction arrow is visible + re-tappable
 }
 static void ctFilterOptCb(lv_event_t* e){
   if(lv_event_get_code(e)!=LV_EVENT_CLICKED) return;
@@ -17035,15 +17147,45 @@ static lv_obj_t* ctOpenOptionSheet(const char* title){
 static void openContactsSortSheet(){
   for(int i=0;i<6;++i) s_ct_filter_btns[i]=nullptr;   // the filter sheet's buttons are gone now
   lv_obj_t* card = ctOpenOptionSheet("Sort by");
-  s_ct_sort_btns[0] = ctSheetOption(card, "Name (A-Z)",     ctSortOptCb, CONTACTS_SORT_AZ,         g_contacts_sort==CONTACTS_SORT_AZ);
-  s_ct_sort_btns[1] = ctSheetOption(card, "Recently heard", ctSortOptCb, CONTACTS_SORT_LAST_HEARD, g_contacts_sort==CONTACTS_SORT_LAST_HEARD);
-  s_ct_sort_btns[2] = ctSheetOption(card, "Recent message", ctSortOptCb, CONTACTS_SORT_LAST_MSG,   g_contacts_sort==CONTACTS_SORT_LAST_MSG);
+  // active=false here; ctSortRowsRepaint() below sets the real highlight + arrow.
+  s_ct_sort_btns[0] = ctSheetOption(card, contactsSortOptName(CONTACTS_SORT_AZ),         ctSortOptCb, CONTACTS_SORT_AZ,         false);
+  s_ct_sort_btns[1] = ctSheetOption(card, contactsSortOptName(CONTACTS_SORT_LAST_HEARD), ctSortOptCb, CONTACTS_SORT_LAST_HEARD, false);
+  s_ct_sort_btns[2] = ctSheetOption(card, contactsSortOptName(CONTACTS_SORT_LAST_MSG),   ctSortOptCb, CONTACTS_SORT_LAST_MSG,   false);
+  s_ct_sort_btns[3] = ctSheetOption(card, contactsSortOptName(CONTACTS_SORT_DISTANCE),   ctSortOptCb, CONTACTS_SORT_DISTANCE,   false);
+  ctSortRowsRepaint();   // tap the active row again to flip ascending/descending
   lv_obj_t* sp = lv_obj_create(card); lv_obj_remove_style_all(sp); lv_obj_set_size(sp, 1, 4);
   ctSheetOption(card, LV_SYMBOL_TRASH "  Select to delete", ctSelectFromSheetCb, 0, false);
 }
 static void openContactsSortSheetCb(lv_event_t* e){ if(lv_event_get_code(e)==LV_EVENT_CLICKED) openContactsSortSheet(); }
+
+// ---- Discovered list sort sheet (reuses the Contacts option-sheet shell) ----
+static void discSortOptCb(lv_event_t* e){
+  if(lv_event_get_code(e)!=LV_EVENT_CLICKED) return;
+  const uint8_t m=(uint8_t)(uintptr_t)lv_event_get_user_data(e);
+  if(m==g_disc_sort) g_disc_sort_desc=!g_disc_sort_desc;   // re-tap the active mode = flip asc/desc
+  else { g_disc_sort=m; g_disc_sort_desc=false; }          // new mode = natural order
+  ctSortSheetClose();
+  closeSettingsModal();
+  lv_event_t synth{}; synth.code=LV_EVENT_CLICKED;
+  openDiscoveredModalCb(&synth);   // rebuild the Discovered list in the new order
+}
+static void openDiscSortSheet(){
+  lv_obj_t* card = ctOpenOptionSheet("Sort discovered");
+  for(int i=0;i<DISC_SORT_COUNT;++i){
+    const bool active=((uint8_t)i==g_disc_sort);
+    // Pass the English name (ctSheetOption translates it); add the direction arrow
+    // to the active row afterwards so the arrow survives translation.
+    lv_obj_t* b = ctSheetOption(card, discSortOptName((uint8_t)i), discSortOptCb, i, active);
+    if(active){
+      lv_obj_t* l=lv_obj_get_child(b,0);
+      if(l) lv_label_set_text_fmt(l, "%s  %s", TR(discSortOptName((uint8_t)i)),
+                                  g_disc_sort_desc?LV_SYMBOL_UP:LV_SYMBOL_DOWN);
+    }
+  }
+}
+static void openDiscSortSheetCb(lv_event_t* e){ if(lv_event_get_code(e)==LV_EVENT_CLICKED) openDiscSortSheet(); }
 static void openContactsFilterSheet(){
-  for(int i=0;i<3;++i) s_ct_sort_btns[i]=nullptr;     // the sort sheet's buttons are gone now
+  for(int i=0;i<CONTACTS_SORT_COUNT;++i) s_ct_sort_btns[i]=nullptr;     // the sort sheet's buttons are gone now
   lv_obj_t* card = ctOpenOptionSheet("Filter");
   s_ct_filter_btns[0] = ctSheetOption(card, "All",            ctFilterOptCb, 0, g_lv.contacts_filter==0);
   s_ct_filter_btns[1] = ctSheetOption(card, "Repeaters",      ctFilterOptCb, 1, g_lv.contacts_filter==1);
@@ -22994,6 +23136,9 @@ static void formatDistanceBadge(char* out, size_t out_cap,
 // Clock snapshot for the contacts sort's "?" test — set before qsort so the
 // non-capturing comparator can read it (mirrors formatAgeBadge's condition).
 static uint32_t s_ct_sort_now = 0;
+// Self GPS snapshot for the distance sort, captured before qsort (the comparator
+// is non-capturing). Degrees.
+static double   s_ct_sort_self_lat = 0.0, s_ct_sort_self_lon = 0.0;
 static void refreshContactsList() {
   if (!g_lv.contacts_list || !g_lv.task) return;
   if (s_ctd_active) return;   // mid bulk-delete: don't rebuild rows under the progress modal
@@ -23110,6 +23255,9 @@ static void refreshContactsList() {
     // Shared predicate (category filter incl. "has location" + name search) so
     // the rendered list and the multi-select "Select all" apply IDENTICAL rules.
     if (!ctPassesFilter(c, is_fav, fav_count, have_search ? search_lc : nullptr)) continue;
+    // Distance sort needs a shared location to order by — drop rows that have none
+    // entirely (favourites included) so the list shows only sortable entries.
+    if (g_contacts_sort == CONTACTS_SORT_DISTANCE && c.gps_lat == 0 && c.gps_lon == 0) continue;
     Entry& e = s_entries[n_entries++];
     e.mesh_idx   = i;
     e.type       = c.type;
@@ -23125,37 +23273,51 @@ static void refreshContactsList() {
     e.name[sizeof(e.name) - 1] = '\0';
   }
 
-  // Capture the clock before sorting (the qsort comparator is non-capturing).
+  // Capture the clock + self GPS before sorting (the qsort comparator is non-capturing).
   { mesh::RTCClock* rtc = the_mesh.getRTCClock(); s_ct_sort_now = rtc ? rtc->getCurrentTime() : 0; }
+  s_ct_sort_self_lat = g_lv.task->getNodeLat();
+  s_ct_sort_self_lon = g_lv.task->getNodeLon();
 
   qsort(s_entries, n_entries, sizeof(Entry),
         [](const void* a, const void* b) -> int {
     const Entry* ea = static_cast<const Entry*>(a);
     const Entry* eb = static_cast<const Entry*>(b);
-    // Favorites always sort above non-favorites regardless of the
-    // category filter. Operator's starred contacts should be the first
-    // thing visible whether they're filtering by RPT, Peer, or anything.
+    // Favorites always sort above non-favorites regardless of the category filter
+    // OR the asc/desc flip. Operator's starred contacts should be the first thing
+    // visible whether they're filtering by RPT, Peer, or anything.
     if (ea->is_fav != eb->is_fav) {
       return ea->is_fav ? -1 : 1;
     }
-    // Contacts whose last-heard renders as "?" sink to the end in every sort
-    // mode. "?" is NOT just last_heard==0: formatAgeBadge also shows it for a
-    // future/garbage timestamp (RTC unset -> now <= last_heard) or one over
-    // 400 days old. Mirror that exact condition using the captured clock so
-    // the sort matches what the row actually displays.
-    const uint32_t now = s_ct_sort_now;
-    const uint32_t a_age = (now > ea->last_heard && ea->last_heard != 0) ? (now - ea->last_heard) : 0;
-    const uint32_t b_age = (now > eb->last_heard && eb->last_heard != 0) ? (now - eb->last_heard) : 0;
-    const bool a_unknown = (a_age == 0 || a_age > (uint32_t)400 * 24u * 3600u);
-    const bool b_unknown = (b_age == 0 || b_age > (uint32_t)400 * 24u * 3600u);
-    if (a_unknown != b_unknown) return a_unknown ? 1 : -1;
-    if (g_contacts_sort == CONTACTS_SORT_LAST_HEARD ||
-        g_contacts_sort == CONTACTS_SORT_LAST_MSG) {
-      if (eb->last_heard != ea->last_heard) {
-        return (eb->last_heard > ea->last_heard) ? 1 : -1;
+    // `prim` < 0 means a comes before b in the mode's NATURAL order; the asc/desc
+    // toggle (g_contacts_sort_desc) flips just this primary key at the very end.
+    int prim = 0;
+    if (g_contacts_sort == CONTACTS_SORT_DISTANCE) {
+      // Nearest first. No-location rows are excluded upstream, so both have a fix.
+      const double da = contactDistanceKm(s_ct_sort_self_lat, s_ct_sort_self_lon,
+                                          ea->gps_lat / 1.0e6, ea->gps_lon / 1.0e6);
+      const double db = contactDistanceKm(s_ct_sort_self_lat, s_ct_sort_self_lon,
+                                          eb->gps_lat / 1.0e6, eb->gps_lon / 1.0e6);
+      if (da < db) prim = -1; else if (da > db) prim = 1;
+    } else {
+      // Contacts whose last-heard renders as "?" sink to the end in every non-distance
+      // mode — structurally, NOT affected by the asc/desc flip. "?" is NOT just
+      // last_heard==0: formatAgeBadge also shows it for a future/garbage timestamp
+      // (RTC unset -> now <= last_heard) or one over 400 days old. Mirror that exact
+      // condition using the captured clock so the sort matches what the row displays.
+      const uint32_t now = s_ct_sort_now;
+      const uint32_t a_age = (now > ea->last_heard && ea->last_heard != 0) ? (now - ea->last_heard) : 0;
+      const uint32_t b_age = (now > eb->last_heard && eb->last_heard != 0) ? (now - eb->last_heard) : 0;
+      const bool a_unknown = (a_age == 0 || a_age > (uint32_t)400 * 24u * 3600u);
+      const bool b_unknown = (b_age == 0 || b_age > (uint32_t)400 * 24u * 3600u);
+      if (a_unknown != b_unknown) return a_unknown ? 1 : -1;
+      if (g_contacts_sort == CONTACTS_SORT_LAST_HEARD ||
+          g_contacts_sort == CONTACTS_SORT_LAST_MSG) {
+        if (ea->last_heard != eb->last_heard)
+          prim = (ea->last_heard > eb->last_heard) ? -1 : 1;   // newer first (natural)
       }
     }
-    return strcasecmp(ea->name, eb->name);
+    if (prim == 0) prim = strcasecmp(ea->name, eb->name);   // A-Z natural order / tiebreak
+    return g_contacts_sort_desc ? -prim : prim;
   });
 
   const uint32_t now_secs = the_mesh.getRTCClock()->getCurrentTime();
