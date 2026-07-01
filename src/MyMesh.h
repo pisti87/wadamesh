@@ -6,6 +6,12 @@
 #include <helpers/MeshTouchTxTrace.h>
 #include "AbstractUITask.h"
 
+// Node-discovery control packet (standard MeshCore — matches examples/simple_repeater
+// + simple_sensor): a zero-hop CTL_TYPE_NODE_DISCOVER_REQ that neighbouring repeaters
+// answer DIRECTLY with a NODE_DISCOVER_RESP. Used by the touch signal probe.
+#define CTL_TYPE_NODE_DISCOVER_REQ    0x80   // upper nibble = type; low bit = prefix_only
+#define CTL_TYPE_NODE_DISCOVER_RESP   0x90
+
 // Operational wire-debug. The companion link is a BINARY protocol over Serial (USB-CDC); writing raw
 // text to Serial during a session interleaves into that stream and corrupts it — the MeshCore app
 // then throws "Bad state: Streamsink is bound to a stream" and the connect / room login / repeater
@@ -623,46 +629,27 @@ public:
     return tag;
   }
 
-  /** SIGNAL PROBE (the non-flooding way): trace-ping the best-reachable repeater so
-   *  it retransmits — a real reply we can measure — WITHOUT flooding the mesh. A
-   *  plain zero-hop advert gets no reply (nothing repeats it), so the signal never
-   *  updates; a directed trace to a neighbour repeater does (it appends its RX-SNR
-   *  and retransmits, which we hear). Picks the repeater with the shortest known
-   *  path (0 = direct neighbour), breaking ties by most-recently-heard. The reply
-   *  is captured silently in onTraceRecv via _ui_sig_probe_tag → _ui_sig_*. Returns
-   *  the tag, or 0 if no repeater with a known path is available (the caller can
-   *  fall back to a zero-hop advert). */
+  /** SIGNAL PROBE (the standard MeshCore node-discovery): broadcast a zero-hop
+   *  NODE_DISCOVER_REQ control packet asking repeaters to answer. Each neighbouring
+   *  repeater replies DIRECTLY with a NODE_DISCOVER_RESP — this is the exact packet the
+   *  Ultra / KiekR GUIs use, and what repeater firmware actually answers. (A TRACE or a
+   *  bare zero-hop advert gets no reply: repeaters don't retransmit an unpathed trace,
+   *  so the old trace-probe read nothing — thanks to Tarmo for decoding the real packet.)
+   *  onControlDataRecv matches _ui_sig_probe_tag on the reply and captures its SNR/RSSI
+   *  into _ui_sig_*. Never floods (zero-hop, not forwarded). Returns the tag. */
   uint32_t uiSendSignalProbe() {
-    ContactInfo best; bool have = false; ContactInfo c;
-    const int n = getNumContacts();
-    for (int i = 0; i < n; i++) {
-      if (!getContactByIdx((uint32_t)i, c)) continue;
-      if (c.type != ADV_TYPE_REPEATER) continue;          // only repeaters retransmit a trace
-      if (c.out_path_len == OUT_PATH_UNKNOWN) continue;   // no known path → would need a flood
-      if (c.out_path_len > MAX_PATH_SIZE) continue;       // guard a corrupt length
-      if (!have) { best = c; have = true; continue; }
-      if (c.out_path_len < best.out_path_len ||
-          (c.out_path_len == best.out_path_len &&
-           c.last_advert_timestamp > best.last_advert_timestamp)) {
-        best = c;
-      }
-    }
-    if (!have) return 0;
-    uint32_t tag = 0;
-    getRNG()->random((uint8_t*)&tag, sizeof(tag));
-    if (tag == 0) tag = 1;
-    uint8_t flags = (uint8_t)(_prefs.path_hash_mode & 0x03);
-    mesh::Packet* pkt = createTrace(tag, 0, flags);
-    if (!pkt) return 0;
-    _ui_sig_probe_tag = tag;
-    if (best.out_path_len > 0 && best.out_path_len <= MAX_PATH_SIZE) {
-      sendDirect(pkt, best.out_path, best.out_path_len);   // directed along the known path
-    } else {
-      uint8_t hash_sz = (uint8_t)(_prefs.path_hash_mode + 1);
-      if (hash_sz == 0 || hash_sz > 4) hash_sz = 1;
-      sendDirect(pkt, best.id.pub_key, hash_sz);           // direct neighbour → single hop
-    }
-    return tag;
+    uint8_t data[10];
+    data[0] = CTL_TYPE_NODE_DISCOVER_REQ;            // 0x80; low bit (prefix_only) stays 0
+    data[1] = (uint8_t)(1 << ADV_TYPE_REPEATER);     // filter: ask repeaters to answer
+    getRNG()->random(&data[2], 4);                   // random tag, to match the responses to
+    memcpy(&_ui_sig_probe_tag, &data[2], 4);
+    if (_ui_sig_probe_tag == 0) { _ui_sig_probe_tag = 1; memcpy(&data[2], &_ui_sig_probe_tag, 4); }
+    uint32_t since = 0;                              // 0 = answer regardless of freshness
+    memcpy(&data[6], &since, 4);
+    mesh::Packet* pkt = createControlData(data, sizeof(data));
+    if (!pkt) { _ui_sig_probe_tag = 0; return 0; }
+    sendZeroHop(pkt);                                // repeaters reply directly; never floods
+    return _ui_sig_probe_tag;
   }
 
   /** Request CayenneLPP telemetry from a remote contact. Reply is delivered

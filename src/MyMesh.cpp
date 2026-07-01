@@ -2322,6 +2322,21 @@ bool MyMesh::onContactPathRecv(ContactInfo& contact, uint8_t* in_path, uint8_t i
 }
 
 void MyMesh::onControlDataRecv(mesh::Packet *packet) {
+  // Signal probe: a neighbouring repeater answered our zero-hop NODE_DISCOVER_REQ with a
+  // NODE_DISCOVER_RESP. Capture OUR reception of that reply (SNR + RSSI) as the live
+  // signal, matched by tag. This is the standard MeshCore node-discovery, the same packet
+  // the Ultra / KiekR GUIs use (a TRACE gets no reply). Additive: the control data is still
+  // relayed to a connected companion app below. The tag is kept, not cleared, so a slower
+  // repeater's reply still registers (a random 32-bit tag makes a stale match negligible).
+  if (packet->payload_len >= 6 && (packet->payload[0] & 0xF0) == CTL_TYPE_NODE_DISCOVER_RESP
+      && _ui_sig_probe_tag != 0) {
+    uint32_t rtag; memcpy(&rtag, &packet->payload[2], 4);
+    if (rtag == _ui_sig_probe_tag) {
+      _ui_sig_snr_q4 = (int8_t)(packet->getSNR() * 4.0f);
+      _ui_sig_rssi   = (int8_t)_radio->getLastRSSI();
+      _ui_sig_ms     = millis();
+    }
+  }
   if (packet->payload_len + 4 > sizeof(out_frame)) {
     MESH_DEBUG_PRINTLN("onControlDataRecv(), payload_len too long: %d", packet->payload_len);
     return;
@@ -2364,18 +2379,8 @@ void MyMesh::onRawDataRecv(mesh::Packet *packet) {
 void MyMesh::onTraceRecv(mesh::Packet *packet, uint32_t tag, uint32_t auth_code, uint8_t flags,
                          const uint8_t *path_snrs, const uint8_t *path_hashes, uint8_t path_len) {
   uint8_t path_sz = flags & 0x03;  // NEW v1.11+
-  // Silent SIGNAL PROBE result: a directed trace we sent to a neighbouring repeater
-  // has come back (it retransmitted; we heard it). Capture OUR reception of that
-  // reply — SNR + RSSI — as the live signal, and swallow it (no popup). This is the
-  // non-flooding replacement for the old flood-advert probe, and must run before the
-  // visible-ping path below.
-  if (tag != 0 && tag == _ui_sig_probe_tag) {
-    _ui_sig_probe_tag = 0;
-    _ui_sig_snr_q4 = (int8_t)(packet->getSNR() * 4.0f);
-    _ui_sig_rssi   = (int8_t)_radio->getLastRSSI();
-    _ui_sig_ms     = millis();
-    return;
-  }
+  // (The signal probe used to be captured here as a directed trace; it is now the
+  // standard node-discovery control packet, captured in onControlDataRecv instead.)
 #if defined(DISPLAY_CLASS)
   // If this trace's tag matches the most recent UI-initiated ping, surface
   // the bidirectional SNRs directly to the touch UI instead of (or in
