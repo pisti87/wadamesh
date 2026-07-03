@@ -1,0 +1,8 @@
+# beta_27 (TEST) — keyboard-backlight control + a Launcher update-button fix, on top of stable beta_25.
+# One user-facing note per non-blank, non-# line; # lines are section comments.
+
+# --- New ---
+Keyboard backlight brightness control on the T-Deck: a live slider plus Off / 25 / 50 / 75 / Max presets in Settings > Keyboard. It dims smoothly (fine-grained at the low end), applies to the on and auto modes and the new-message flash, and survives a reboot. Thanks to Yazutsu (PR #85).
+
+# --- Fixed ---
+Devices installed under the Launcher no longer show the on-device "Install update" button. That update path only works on a standalone flash; under the Launcher it failed with "won't fit: Bad Size Given". The "update available" note stays, but you update through the Launcher instead. Thanks to Keith (KM1USR) for the report.

@@ -6810,14 +6810,25 @@ static void rebootCb(lv_event_t* e) {
 }
 
 #if defined(ESP32)
-// True when the running image has a spare OTA app slot to write an update into.
-// Standalone meshcomod ships a dual-OTA (A/B) table -> true -> in-firmware +
-// phone-app update works. Installed under Launcher (single app slot) there's no
-// spare partition -> false -> the update affordances hide, so the same app-only
-// bin behaves correctly in both worlds. (Replaces the retired reboot-to-recovery
-// helpers — the recovery firmware is gone.)
+// True when the running image has a spare OTA app slot BIG ENOUGH to write an
+// update into. Standalone wadamesh ships a dual-OTA (A/B) table with two equal
+// ~3.875 MB slots -> true -> in-firmware + phone-app update works.
+//
+// Installed under bmorcelli's Launcher the app runs from a slot in the Launcher's
+// OWN partition table, whose spare OTA slot is SMALLER than our build slot. A
+// mere "spare exists" test (esp_ota_get_next_update_partition != NULL) passes
+// there, so the update button showed and then Update.begin() failed with
+// "Bad Size Given" (reported by Keith/KM1USR, beta_24 under Launcher). Requiring
+// the target slot to be at least as large as the one we're running from keeps the
+// update affordances (Install / previous-version / beta toggle, gated on this)
+// hidden under Launcher, where updates go through the Launcher instead — the
+// "update manually" notice on the About page still shows. A null running/next
+// partition (e.g. an AppFS-hosted build) also reads as "no in-place OTA".
 static bool touchHasOtaUpdateSlot() {
-  return esp_ota_get_next_update_partition(NULL) != NULL;
+  const esp_partition_t* nxt = esp_ota_get_next_update_partition(NULL);
+  const esp_partition_t* run = esp_ota_get_running_partition();
+  if (nxt == NULL || run == NULL) return false;
+  return nxt->size >= run->size;
 }
 #endif
 
