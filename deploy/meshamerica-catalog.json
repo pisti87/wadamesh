@@ -17,19 +17,19 @@
           "role": "gui",
           "title": "Touch UI",
           "version": {
-            "beta_27": {
-              "notes": "Fixed a reboot loop that could hit while the device saved its contact list. Internal-flash housekeeping during a save could freeze the device long enough to trip the watchdog and restart it; that save no longer trips it. Thanks to the crash report that pinned it down.\nDevices installed under the Launcher no longer show the on-device \"Install update\" button. That update path only works on a standalone flash; under the Launcher it failed with \"won't fit: Bad Size Given\". The \"update available\" note stays, but you update through the Launcher instead. Thanks to Keith (KM1USR) for the report.\nKeyboard backlight brightness control on the T-Deck: a live slider plus Off / 25 / 50 / 75 / Max presets in Settings > Keyboard. It dims smoothly (fine-grained at the low end), applies to the on and auto modes and the new-message flash, and survives a reboot. Thanks to Yazutsu (PR #85).\nOn devices with a microSD card, contacts and channels are now kept on the card (like chat history and map tiles already are). Your existing contacts move over automatically on first boot; your identity and settings stay in internal flash, so the node is unchanged. Keep the card inserted afterwards - the contact list lives on it, and an older firmware won't look there if you ever downgrade.\nThis is the new stable build, promoted from the beta_27 test channel. It includes everything from the beta_26 and beta_27 test builds.",
+            "beta_31": {
+              "notes": "The chats tab has a fresh look: each conversation now shows a round avatar in that chat's signature colour (the same colour its bubbles use) with the first two letters of the name, the last message previewed under the name, the time top right and the unread count below it. Compact chat mode keeps the dense single-line rows instead, so both styles are available.\nChannels can have a custom icon: open the channel's settings (long-press or the gear) and tap \"Chat icon\" to pick any emoji as its avatar. Long-press the same entry to go back to the automatic letters. The choice is remembered per channel.\nLong chat names no longer wrap onto the message preview underneath.",
               "files": [
                 {
                   "type": "flash-wipe",
                   "name": "wadamesh-heltec-v4-tft-merged.bin",
-                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_27/wadamesh-heltec-v4-tft-merged.bin",
+                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_31/wadamesh-heltec-v4-tft-merged.bin",
                   "title": "Full install (bootloader + firmware)"
                 },
                 {
                   "type": "flash-update",
                   "name": "wadamesh-heltec-v4-tft.bin",
-                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_27/wadamesh-heltec-v4-tft.bin",
+                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_31/wadamesh-heltec-v4-tft.bin",
                   "title": "Update (app only)"
                 }
               ]
@@ -49,19 +49,19 @@
           "role": "gui",
           "title": "Touch UI",
           "version": {
-            "beta_27": {
-              "notes": "Fixed a reboot loop that could hit while the device saved its contact list. Internal-flash housekeeping during a save could freeze the device long enough to trip the watchdog and restart it; that save no longer trips it. Thanks to the crash report that pinned it down.\nDevices installed under the Launcher no longer show the on-device \"Install update\" button. That update path only works on a standalone flash; under the Launcher it failed with \"won't fit: Bad Size Given\". The \"update available\" note stays, but you update through the Launcher instead. Thanks to Keith (KM1USR) for the report.\nKeyboard backlight brightness control on the T-Deck: a live slider plus Off / 25 / 50 / 75 / Max presets in Settings > Keyboard. It dims smoothly (fine-grained at the low end), applies to the on and auto modes and the new-message flash, and survives a reboot. Thanks to Yazutsu (PR #85).\nOn devices with a microSD card, contacts and channels are now kept on the card (like chat history and map tiles already are). Your existing contacts move over automatically on first boot; your identity and settings stay in internal flash, so the node is unchanged. Keep the card inserted afterwards - the contact list lives on it, and an older firmware won't look there if you ever downgrade.\nThis is the new stable build, promoted from the beta_27 test channel. It includes everything from the beta_26 and beta_27 test builds.",
+            "beta_31": {
+              "notes": "The chats tab has a fresh look: each conversation now shows a round avatar in that chat's signature colour (the same colour its bubbles use) with the first two letters of the name, the last message previewed under the name, the time top right and the unread count below it. Compact chat mode keeps the dense single-line rows instead, so both styles are available.\nChannels can have a custom icon: open the channel's settings (long-press or the gear) and tap \"Chat icon\" to pick any emoji as its avatar. Long-press the same entry to go back to the automatic letters. The choice is remembered per channel.\nLong chat names no longer wrap onto the message preview underneath.",
               "files": [
                 {
                   "type": "flash-wipe",
                   "name": "wadamesh-tdeck-merged.bin",
-                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_27/wadamesh-tdeck-merged.bin",
+                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_31/wadamesh-tdeck-merged.bin",
                   "title": "Full install (bootloader + firmware)"
                 },
                 {
                   "type": "flash-update",
                   "name": "wadamesh-tdeck.bin",
-                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_27/wadamesh-tdeck.bin",
+                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_31/wadamesh-tdeck.bin",
                   "title": "Update (app only)"
                 }
               ]
