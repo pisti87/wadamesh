@@ -981,7 +981,10 @@ struct LvContactButtonCtx {
   lv_obj_t* age_lbl;     // the row's Heard label — updated in place on the 60s age tick (#82)
 };
 
-static LvContactButtonCtx s_contacts_ctx[128];
+static void* psAlloc(size_t n);   // defined below — PSRAM-first, zero-init
+#define CONTACTS_CTX_MAX 128
+static LvContactButtonCtx* s_contacts_ctx =
+    (LvContactButtonCtx*)psAlloc(sizeof(LvContactButtonCtx) * CONTACTS_CTX_MAX);   // PSRAM (2 KB off internal .bss)
 
 // ---- Contact list sort modes (cycled via short-press on the active filter) ----
 enum ContactsSortMode : uint8_t {
@@ -1067,7 +1070,8 @@ struct LvUiState {
 // ---- Diagnostics ring buffer ----
 constexpr int DIAG_LINES = 16;   // bumped from 7 so dispatcher TX traces survive the UI flow
 constexpr int DIAG_COLS  = 44;
-static char     s_diag_ring[DIAG_LINES][DIAG_COLS];
+static char (*s_diag_ring)[DIAG_COLS] =
+    (char(*)[DIAG_COLS])psAlloc((size_t)DIAG_LINES * DIAG_COLS);   // PSRAM (0.7 KB off internal .bss)
 static int      s_diag_line  = 0;
 // Sticky copy of the latest "ID …" identity/radio diag line. MyMesh emits
 // this during begin() — before the Diag tab's labels exist — so we cache
@@ -3648,6 +3652,15 @@ static bool          s_verchk_recheck  = false;  // force a fresh check now (e.g
 // with the worker's own SD writes) — doing it on the UI thread froze the About sheet and
 // dropped the Back tap. Off-load it to the core-0 worker; sysInfoText reads these.
 static volatile bool s_sdinfo_request  = false;  // UI -> worker: rescan SD usage
+// UI -> worker: write the chat-history snapshot to storage. The full-file write
+// can stall for multiple seconds in SPIFFS garbage collection on SD-less boards
+// (Heltec V4); on the loop thread that froze the whole UI, incl. touch wake
+// (the "ui:hist 6140ms" field stall). The loop thread snapshots the ring, the
+// worker writes the snapshot; shutdown/reboot still write synchronously.
+static volatile bool s_hist_flush_req  = false;  // snapshot armed, waiting for the worker
+static volatile bool s_hist_flush_busy = false;  // worker owns the snapshot + the history file
+static volatile bool s_hist_flush_ok   = true;   // last worker write result (retry on false)
+static bool uiHistWorkerFlush();                 // defined with the storage code below
 static volatile bool s_sdinfo_done     = false;  // worker -> UI: a result exists
 static volatile bool s_sdinfo_ok       = false;  // card present + sizes valid
 static uint64_t      s_sdinfo_tot      = 0;
@@ -6183,7 +6196,13 @@ static void toggleTcpCb(lv_event_t* e) {
 
 static void toggleBleCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task || !g_lv.task->hasBleCapability()) return;
-  g_lv.task->isBleEnabled() ? g_lv.task->disableBle() : g_lv.task->enableBle();
+  if (g_lv.task->isBleEnabled()) {
+    g_lv.task->disableBle();
+  } else if (!g_lv.task->enableBle()) {
+    g_lv.task->showAlert(TR("Not enough free memory for Bluetooth. Turn Wi-Fi off first."), 2200);
+    refreshStatusLabels();
+    return;
+  }
   g_lv.task->showAlert(g_lv.task->isBleEnabled() ? TR("BLE on") : TR("BLE off"), 900);
   refreshStatusLabels();
 }
@@ -6857,6 +6876,8 @@ static void saveProfileNameCb(lv_event_t* e) {
   if (g_lv.task->setNodeName(name)) {
     g_lv.task->showAlert(TR("Name saved"), 1000);
     refreshStatusLabels();
+  } else {
+    g_lv.task->showAlert(TR("Couldn't save the name to storage"), 2200);
   }
 }
 
@@ -10734,7 +10755,15 @@ static void bleEnableSwitchCb(lv_event_t* e) {
   if (!g_lv.task->hasBleCapability()) { g_lv.task->showAlert(TR("No Bluetooth on this device"), 1400); return; }
   const bool want = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
   if (want == g_lv.task->isBleEnabled()) return;
-  if (want) g_lv.task->enableBle(); else g_lv.task->disableBle();
+  if (want) {
+    if (!g_lv.task->enableBle()) {
+      lv_obj_clear_state(lv_event_get_target(e), LV_STATE_CHECKED);   // revert the switch
+      g_lv.task->showAlert(TR("Not enough free memory for Bluetooth. Turn Wi-Fi off first."), 2200);
+      return;
+    }
+  } else {
+    g_lv.task->disableBle();
+  }
   g_lv.task->showAlert(want ? TR("Bluetooth on") : TR("Bluetooth off"), 1000);
 }
 // Pairing code: persist a 6-digit PIN on blur (applies next reboot, same contract as the
@@ -11106,6 +11135,19 @@ static void wifiScanOpenAndKick() {
   s_wifiscan_request = true;
 }
 
+// Mirror of the BLE-enable guard: bringing esp_wifi up needs ~50 KB free internal
+// heap, and with BLE already holding its share on a tight board the init fails
+// DEEP in the Wi-Fi state machine (main.cpp) where nothing reports it — the UI
+// toasted "Wi-Fi on" while the radio never came up. Refuse at the toggle instead,
+// symmetrically with UITask::enableBle(). Thresholds match the boot co-init guard.
+static bool wifiEnableGuardOk() {
+#if defined(ESP32)
+  return ESP.getFreeHeap() >= 50u * 1024u && ESP.getMaxAllocHeap() >= 20u * 1024u;
+#else
+  return true;
+#endif
+}
+
 // "Scan" button -> open the popup + queue a scan on the core-0 worker. If Wi-Fi
 // is off (BLE active), bring the radio up LIVE first — it coexists with NimBLE,
 // no reboot — then scan; the worker brings STA up and lists networks.
@@ -11113,6 +11155,10 @@ static void wifiScanStartCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
 #if defined(MULTI_TRANSPORT_COMPANION)
   if (!wifiConfigWantsWifi()) {
+    if (!wifiEnableGuardOk()) {
+      if (g_lv.task) g_lv.task->showAlert(TR("Not enough free memory for Wi-Fi. Turn Bluetooth off first."), 2200);
+      return;
+    }
     wifiConfigSetRadioEnabled(true);   // wantsWifi() now true -> the scan worker can bring STA up
     wifiConfigRequestApply();          // main loop brings esp_wifi up live (no reboot)
     if (g_lv.task) g_lv.task->showAlert(TR("Wi-Fi on, scanning\xE2\x80\xA6"), 1200);
@@ -11191,6 +11237,11 @@ static void wifiRadioToggleCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
   const bool on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  if (on && !wifiEnableGuardOk()) {
+    lv_obj_clear_state(lv_event_get_target(e), LV_STATE_CHECKED);   // revert the switch
+    if (g_lv.task) g_lv.task->showAlert(TR("Not enough free memory for Wi-Fi. Turn Bluetooth off first."), 2200);
+    return;
+  }
   wifiConfigSetRadioEnabled(on);
   if (g_lv.task) g_lv.task->showAlert(on ? TR("Wi-Fi on") : TR("Wi-Fi off"), 800);
   refreshStatusLabels();
@@ -12207,7 +12258,8 @@ static lv_obj_t* s_admin_log_box   = nullptr;
 static lv_obj_t* s_admin_cmd_ta    = nullptr;
 static uint8_t   s_admin_pub32[32] = {0};
 static char      s_admin_name[24]  = {0};
-static char      s_admin_log[1024] = {0};  // ring-ish log buffer
+#define ADMIN_LOG_SZ 1024
+static char*     s_admin_log = (char*)psAlloc(ADMIN_LOG_SZ);  // ring-ish log buffer — PSRAM
 // When the login prompt is opened to JOIN a room server (not admin a repeater),
 // this holds that room's contact index so onAdminLoginResult can open the room
 // chat on success. -1 = the current login is a normal repeater admin login.
@@ -12360,7 +12412,7 @@ static void closeAdminConsole() {
 
 static void adminLogAppend(const char* prefix, const char* text) {
   if (!text) return;
-  size_t cap = sizeof(s_admin_log);
+  size_t cap = (size_t)ADMIN_LOG_SZ;
   // Ring behaviour: if appending would overflow, drop the first half so we
   // keep recent output (the operator cares about the latest reply, not the
   // first one). Cheap memmove rather than a proper ring.
@@ -19143,7 +19195,7 @@ static void openContactsOverflowSheetCb(lv_event_t* e) {
 // Contacts — Sort & filter sheet + multi-select delete
 // ============================================================
 static bool      s_ct_select_mode = false;
-static uint8_t   s_ct_sel[128][6];           // pub_key prefix of currently-selected (deletable) contacts
+static uint8_t   (*s_ct_sel)[6] = (uint8_t(*)[6])psAlloc(128 * 6);   // pub_key prefix of currently-selected (deletable) contacts — PSRAM
 static int       s_ct_sel_n       = 0;
 static bool      s_ct_list_force  = false;   // force refreshContactsList past its no-change cache
 static volatile bool s_ct_contacts_dirty = false;   // a contact was discovered/added (set from the mesh callback); UITask::loop rebuilds the visible Contacts list — issue #73
@@ -20025,7 +20077,7 @@ struct MapTile {
   bool      in_use;      // true = slot's (z,x,y) is valid; false = empty slot
 };
 
-static MapTile  s_map_tiles[k_map_visible_tiles_max] = {};
+static MapTile* s_map_tiles = (MapTile*)psAlloc(sizeof(MapTile) * k_map_visible_tiles_max);   // PSRAM (1.1 KB off internal .bss)
 // Recompute the per-axis tile radius from the current canvas size. Enough
 // tiles must straddle the center so the grid covers the FULL viewport even
 // when the center coordinate sits at the very edge of its center tile:
@@ -20492,6 +20544,16 @@ static void tileFetchTaskFn(void* arg) {
       s_los_got = ok ? k_los_samples : 0;
       s_los_busy = false;
       s_los_result_ready = true;
+      continue;
+    }
+    // Chat-history flush: write the loop thread's snapshot. busy is raised BEFORE
+    // req is cleared so the loop-side gate (busy || req) never sees a gap in which
+    // it could overwrite the snapshot mid-write.
+    if (s_hist_flush_req) {
+      s_hist_flush_busy = true;
+      s_hist_flush_req  = false;
+      s_hist_flush_ok   = uiHistWorkerFlush();
+      s_hist_flush_busy = false;
       continue;
     }
     // Firmware update check (one-shot, infrequent). Reuses this worker's stack.
@@ -21054,7 +21116,7 @@ static bool loadTileJpeg(uint8_t z, int32_t x, int32_t y,
 
 // Free everything currently in the tile cache.
 static void freeMapTiles() {
-  for (auto& t : s_map_tiles) freeMapTileSlot(t);
+  for (int _ti = 0; _ti < k_map_visible_tiles_max; ++_ti) freeMapTileSlot(s_map_tiles[_ti]);
 }
 
 #if defined(ESP32)
@@ -21189,7 +21251,7 @@ static void renderMapTiles() {
   renderMapMarkers();
 
   // Pass 1 — keep matching slots, free non-matching ones.
-  for (auto& t : s_map_tiles) {
+  for (int _ti = 0; _ti < k_map_visible_tiles_max; ++_ti) { MapTile& t = s_map_tiles[_ti];
     if (!t.in_use) continue;
     if (t.z != s_map_zoom) { freeMapTileSlot(t); continue; }
     bool kept = false;
@@ -21217,7 +21279,7 @@ static void renderMapTiles() {
     if (wanted[i].placed) { any_loaded = true; continue; }
     // Find an empty slot.
     MapTile* dst = nullptr;
-    for (auto& t : s_map_tiles) {
+    for (int _ti = 0; _ti < k_map_visible_tiles_max; ++_ti) { MapTile& t = s_map_tiles[_ti];
       if (!t.in_use) { dst = &t; break; }
     }
     if (!dst) break;  // shouldn't happen — wanted count == slot count
@@ -21444,7 +21506,7 @@ static void applyMapTextVis() {
 // freeMapMarkers() at the start of the next render.
 struct RouteNode { double lat, lon; bool has_pos; char tag[6]; char name[36]; char id[9]; };
 static constexpr int k_route_max = 10;
-static RouteNode   s_route[k_route_max] = {};
+static RouteNode*  s_route = (RouteNode*)psAlloc(sizeof(RouteNode) * k_route_max);   // PSRAM (0.7 KB off internal .bss)
 static int         s_route_n      = 0;       // nodes captured
 static int         s_route_reveal = 0;       // nodes shown so far (animation cursor)
 static bool        s_route_active = false;   // overlay currently shown
@@ -26340,7 +26402,7 @@ static void refreshContactsList() {
   int        name_w  = heard_x - name_x - 6;
   if (name_w < 50) name_w = 50;
   for (int k = 0; k < n_entries; ++k) {
-    if (k >= (int)(sizeof(s_contacts_ctx)/sizeof(s_contacts_ctx[0]))) break;
+    if (k >= CONTACTS_CTX_MAX) break;
     const Entry& e = s_entries[k];
     const bool is_rep = (e.type == ADV_TYPE_REPEATER);
 
@@ -26459,7 +26521,7 @@ static void refreshContactsList() {
   // it so the tail isn't silently hidden. Search narrows the list to any of them,
   // and changing the sort floats different ones to the top. #73.
   {
-    const int render_cap = (int)(sizeof(s_contacts_ctx) / sizeof(s_contacts_ctx[0]));
+    const int render_cap = CONTACTS_CTX_MAX;
     if (n_entries > render_cap) {
       char more[56];
       snprintf(more, sizeof(more), "+%d more — search to narrow the list", n_entries - render_cap);
@@ -28524,6 +28586,11 @@ static void ccWifiCb(lv_event_t* e) {
   // Live: the main loop brings esp_wifi up (WiFi.mode/begin) or down (WIFI_OFF)
   // in response to this pref — no reboot.
   const bool on = wifiConfigGetRadioEnabled();
+  if (!on && !wifiEnableGuardOk()) {
+    if (g_lv.task) g_lv.task->showAlert(TR("Not enough free memory for Wi-Fi. Turn Bluetooth off first."), 2200);
+    openControlCenter();
+    return;
+  }
   wifiConfigSetRadioEnabled(!on);
   if (g_lv.task) g_lv.task->showAlert(on ? TR("Wi-Fi off") : TR("Wi-Fi on"), 800);
   openControlCenter();
@@ -28536,7 +28603,13 @@ static void ccBleCb(lv_event_t* e) {
 #if defined(ESP32)
   // Live: enableBle() lazily brings NimBLE up if it wasn't started at boot.
   const bool on = g_lv.task->isBleEnabled();
-  on ? g_lv.task->disableBle() : g_lv.task->enableBle();
+  if (on) {
+    g_lv.task->disableBle();
+  } else if (!g_lv.task->enableBle()) {
+    g_lv.task->showAlert(TR("Not enough free memory for Bluetooth. Turn Wi-Fi off first."), 2200);
+    openControlCenter();
+    return;
+  }
   g_lv.task->showAlert(on ? TR("Bluetooth off") : TR("Bluetooth on"), 800);
   openControlCenter();
 #endif
@@ -33948,14 +34021,54 @@ void UITask::markMsgsDirty(unsigned long delay_ms) {
   markThreadsDirty(1500);  // thread state (last_ts, unread) changed too — coalesce a message burst into one write
 }
 
+// Snapshot of the message ring handed to the core-0 worker for the off-thread
+// write. Allocated once in PSRAM (ring-sized: ~115 KB SPIFFS ring / ~1.1 MB SD
+// ring); the worker only ever touches the snapshot, never the live ring.
+static UITask::UIMessage* s_hist_snap     = nullptr;
+static int           s_hist_snap_cap      = 0;
+static uint16_t      s_hist_snap_count    = 0;
+static uint16_t      s_hist_snap_head     = 0;
+static uint32_t      s_hist_snap_msgcount = 0;
+
 void UITask::flushHistoryIfDue(unsigned long now) {
+  // A worker write failed (storage hiccup): re-arm and try again.
+  if (!s_hist_flush_ok) { s_hist_flush_ok = true; markMsgsDirty(5000); }
   // Thread metadata (~4 KB) flushes on a short delay; the message ring
   // (scales with MAX_UI_MESSAGES) flushes lazily to reduce flash write pressure.
   if (_threads_dirty && now >= _next_threads_flush_ms) {
-    if (saveThreadsToStorage()) _threads_dirty = false;
+    if (s_hist_flush_busy) {
+      // The worker is mid-write on the same filesystem; SPIFFS serializes
+      // internally, so writing now would block the loop behind its GC. Defer.
+      _next_threads_flush_ms = now + 1000;
+    } else if (saveThreadsToStorage()) _threads_dirty = false;
     else _next_threads_flush_ms = now + 2000;
   }
   if (_msgs_dirty && now >= _next_msgs_flush_ms) {
+    if (s_hist_flush_busy || s_hist_flush_req) {
+      _next_msgs_flush_ms = now + 1000;   // one flush in flight; new messages ride the next one
+      return;
+    }
+#if defined(ESP32)
+    // Snapshot the ring (a few ms of PSRAM memcpy) and hand the write to the
+    // core-0 worker. Messages arriving while the worker writes stay in the live
+    // ring and re-arm the dirty flag, so they land in the next flush.
+    if (!s_hist_snap || s_hist_snap_cap != _ui_msg_cap) {
+      if (s_hist_snap) { heap_caps_free(s_hist_snap); s_hist_snap = nullptr; }
+      s_hist_snap = (UITask::UIMessage*)heap_caps_malloc(sizeof(UITask::UIMessage) * (size_t)_ui_msg_cap,
+                                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      s_hist_snap_cap = s_hist_snap ? _ui_msg_cap : 0;
+    }
+    if (s_hist_snap) {
+      memcpy(s_hist_snap, _ui_msgs, sizeof(UITask::UIMessage) * (size_t)_ui_msg_cap);
+      s_hist_snap_count    = (uint16_t)_ui_msg_count;
+      s_hist_snap_head     = (uint16_t)_ui_msg_head;
+      s_hist_snap_msgcount = (uint32_t)_msgcount;
+      s_hist_flush_req = true;   // worker picks it up
+      _msgs_dirty = false;
+      return;
+    }
+#endif
+    // No PSRAM for a snapshot: fall back to the old synchronous write.
     if (saveMsgsToStorage()) _msgs_dirty = false;
     else _next_msgs_flush_ms = now + 2000;
   }
@@ -34319,16 +34432,17 @@ bool UITask::saveThreadsToStorage() {
 #endif
 }
 
-bool UITask::saveMsgsToStorage() {
+// Write a message ring (the live one at shutdown, the worker's snapshot for the
+// periodic flush) to the history file. Chunked writer (same pattern that fixed
+// the contacts stall, #82): records are packed into an INTERNAL-RAM chunk and
+// flushed in ~6 KB writes, so the ring costs ~20 FS calls (500 slots) / ~210
+// (5000 slots) instead of one small write per record. This is NOT the "one big
+// write from PSRAM" that regressed before: the chunk lives in internal RAM (the
+// flash driver never bounces a PSRAM source). Alloc failure falls back to the
+// original per-record writes.
+static bool uiWriteMsgsFile(const UITask::UIMessage* msgs, int cap,
+                            uint16_t count, uint16_t head, uint32_t msgcount) {
 #if defined(ESP32)
-  // Chunked writer (same pattern that fixed the contacts stall, #82): records are
-  // packed into an INTERNAL-RAM chunk and flushed in ~6 KB writes, so the ring
-  // costs ~20 FS calls (500 slots) / ~210 (5000 slots) instead of one small write
-  // per record — a full-ring rewrite froze the UI 1-2 s per incoming message on
-  // busy meshes. This is NOT the "one big write from PSRAM" that regressed before:
-  // the chunk lives in internal RAM (the flash driver never bounces a PSRAM
-  // source), and the per-record field copies are unchanged. Alloc failure falls
-  // back to the original per-record writes.
   WdtHeavyGuard _wg;   // a fragmenting write can trigger a multi-second SPIFFS GC
   File f = uiDataOpen(k_ui_msgs_path, "w");
   if (!f) return false;
@@ -34337,9 +34451,9 @@ bool UITask::saveMsgsToStorage() {
   hdr.magic         = k_ui_msgs_magic;
   hdr.version       = k_ui_history_version;
   hdr.msg_rec_size  = static_cast<uint16_t>(sizeof(UiHistoryMsg));
-  hdr.ui_msg_count  = static_cast<uint16_t>(_ui_msg_count);
-  hdr.ui_msg_head   = static_cast<uint16_t>(_ui_msg_head);
-  hdr.msgcount      = static_cast<uint32_t>(_msgcount);
+  hdr.ui_msg_count  = count;
+  hdr.ui_msg_head   = head;
+  hdr.msgcount      = msgcount;
   if (f.write(reinterpret_cast<const uint8_t*>(&hdr), sizeof(hdr)) != sizeof(hdr)) {
     f.close(); return false;
   }
@@ -34351,22 +34465,22 @@ bool UITask::saveMsgsToStorage() {
   bool ok = true;
   if (buf) {
     size_t fill = 0;
-    for (int i = 0; ok && i < _ui_msg_cap; ++i) {
+    for (int i = 0; ok && i < cap; ++i) {
       UiHistoryMsg* m = reinterpret_cast<UiHistoryMsg*>(buf + fill);
       memset(m, 0, REC);
-      m->ts          = _ui_msgs[i].ts;
-      m->channel     = _ui_msgs[i].channel ? 1u : 0u;
-      m->outgoing    = _ui_msgs[i].outgoing ? 1u : 0u;
-      m->meta_flags  = _ui_msgs[i].meta_flags;
-      m->path_len    = _ui_msgs[i].path_len;
-      m->snr_q4      = _ui_msgs[i].snr_q4;
-      m->rssi        = _ui_msgs[i].rssi;
-      strncpy(m->thread, _ui_msgs[i].thread, MAX_THREAD_NAME);
-      m->thread[MAX_THREAD_NAME] = '\0';
-      strncpy(m->sender, _ui_msgs[i].sender, MAX_SENDER_NAME);
-      m->sender[MAX_SENDER_NAME] = '\0';
-      strncpy(m->text, _ui_msgs[i].text, MAX_MSG_TEXT);
-      m->text[MAX_MSG_TEXT] = '\0';
+      m->ts          = msgs[i].ts;
+      m->channel     = msgs[i].channel ? 1u : 0u;
+      m->outgoing    = msgs[i].outgoing ? 1u : 0u;
+      m->meta_flags  = msgs[i].meta_flags;
+      m->path_len    = msgs[i].path_len;
+      m->snr_q4      = msgs[i].snr_q4;
+      m->rssi        = msgs[i].rssi;
+      strncpy(m->thread, msgs[i].thread, sizeof(m->thread) - 1);
+      m->thread[sizeof(m->thread) - 1] = '\0';
+      strncpy(m->sender, msgs[i].sender, sizeof(m->sender) - 1);
+      m->sender[sizeof(m->sender) - 1] = '\0';
+      strncpy(m->text, msgs[i].text, sizeof(m->text) - 1);
+      m->text[sizeof(m->text) - 1] = '\0';
       fill += REC;
       if (fill == REC * chunk_recs) {
         ok = (f.write(buf, fill) == fill);
@@ -34377,26 +34491,48 @@ bool UITask::saveMsgsToStorage() {
     free(buf);
   } else {
     UiHistoryMsg m{};
-    for (int i = 0; ok && i < _ui_msg_cap; ++i) {
+    for (int i = 0; ok && i < cap; ++i) {
       memset(&m, 0, sizeof(m));
-      m.ts          = _ui_msgs[i].ts;
-      m.channel     = _ui_msgs[i].channel ? 1u : 0u;
-      m.outgoing    = _ui_msgs[i].outgoing ? 1u : 0u;
-      m.meta_flags  = _ui_msgs[i].meta_flags;
-      m.path_len    = _ui_msgs[i].path_len;
-      m.snr_q4      = _ui_msgs[i].snr_q4;
-      m.rssi        = _ui_msgs[i].rssi;
-      strncpy(m.thread, _ui_msgs[i].thread, MAX_THREAD_NAME);
-      m.thread[MAX_THREAD_NAME] = '\0';
-      strncpy(m.sender, _ui_msgs[i].sender, MAX_SENDER_NAME);
-      m.sender[MAX_SENDER_NAME] = '\0';
-      strncpy(m.text, _ui_msgs[i].text, MAX_MSG_TEXT);
-      m.text[MAX_MSG_TEXT] = '\0';
+      m.ts          = msgs[i].ts;
+      m.channel     = msgs[i].channel ? 1u : 0u;
+      m.outgoing    = msgs[i].outgoing ? 1u : 0u;
+      m.meta_flags  = msgs[i].meta_flags;
+      m.path_len    = msgs[i].path_len;
+      m.snr_q4      = msgs[i].snr_q4;
+      m.rssi        = msgs[i].rssi;
+      strncpy(m.thread, msgs[i].thread, sizeof(m.thread) - 1);
+      m.thread[sizeof(m.thread) - 1] = '\0';
+      strncpy(m.sender, msgs[i].sender, sizeof(m.sender) - 1);
+      m.sender[sizeof(m.sender) - 1] = '\0';
+      strncpy(m.text, msgs[i].text, sizeof(m.text) - 1);
+      m.text[sizeof(m.text) - 1] = '\0';
       ok = (f.write(reinterpret_cast<const uint8_t*>(&m), sizeof(m)) == sizeof(m));
     }
   }
   f.close();
   return ok;
+#else
+  (void)msgs; (void)cap; (void)count; (void)head; (void)msgcount;
+  return false;
+#endif
+}
+
+// Worker-side entry: write the snapshot the loop thread armed (core-0 task; the
+// loop thread never waits on this, which is the whole point).
+static bool uiHistWorkerFlush() {
+  if (!s_hist_snap || s_hist_snap_cap <= 0) return true;   // nothing armed
+  return uiWriteMsgsFile(s_hist_snap, s_hist_snap_cap,
+                         s_hist_snap_count, s_hist_snap_head, s_hist_snap_msgcount);
+}
+
+bool UITask::saveMsgsToStorage() {
+#if defined(ESP32)
+  // Synchronous write of the LIVE ring — shutdown/reboot and the no-PSRAM
+  // fallback only; the periodic flush goes through the worker snapshot.
+  return uiWriteMsgsFile(_ui_msgs, _ui_msg_cap,
+                         static_cast<uint16_t>(_ui_msg_count),
+                         static_cast<uint16_t>(_ui_msg_head),
+                         static_cast<uint32_t>(_msgcount));
 #else
   return false;
 #endif
@@ -36123,8 +36259,9 @@ bool UITask::setNodeName(const char* s) {
   if (!s) s = "";
   strncpy(_node_prefs->node_name, s, sizeof(_node_prefs->node_name) - 1);
   _node_prefs->node_name[sizeof(_node_prefs->node_name) - 1] = '\0';
-  the_mesh.savePrefs();
-  return true;
+  // Report the real write result — the "Name saved" toast used to show even
+  // when the storage write silently failed.
+  return the_mesh.savePrefs();
 }
 
 bool UITask::setPosition(double lat, double lon) {
@@ -36451,7 +36588,33 @@ bool UITask::sendSignalProbe() {
   return the_mesh.sendAdvert(false);
 }
 
+// Two writers interleaving on the history file would corrupt it: wait out an
+// in-flight worker flush (bounded; worst observed SPIFFS GC ~6-8 s) and cancel
+// a pending one. Returns true if a pending flush was cancelled — its snapshot
+// was never written, so the caller must treat the ring as dirty and write it.
+static bool uiHistWaitWorkerIdle() {
+  const bool cancelled = s_hist_flush_req;
+  s_hist_flush_req = false;
+  const uint32_t t0 = millis();
+  while (s_hist_flush_busy && (uint32_t)(millis() - t0) < 9000) delay(10);
+  return cancelled;
+}
+
+bool UITask::enableBle() {
+  if (!_serial) return false;
+#if defined(ESP32)
+  // Same thresholds as the boot-time co-init guard (main.cpp) — keep in sync.
+  const size_t BLE_COEXIST_MIN_FREE  = 50u * 1024u;
+  const size_t BLE_COEXIST_MIN_BLOCK = 20u * 1024u;
+  if (ESP.getFreeHeap() < BLE_COEXIST_MIN_FREE || ESP.getMaxAllocHeap() < BLE_COEXIST_MIN_BLOCK)
+    return false;
+#endif
+  _serial->enableBle();
+  return true;
+}
+
 void UITask::persistHistoryNow() {
+  uiHistWaitWorkerIdle();   // writes below cover strictly newer data
   saveThreadsToStorage();
   saveMsgsToStorage();
 }
@@ -36460,6 +36623,7 @@ void UITask::rebootDevice() {
   // Persist chat history synchronously before we reboot — the periodic
   // flush is rate-capped, so without this a reboot could drop the most
   // recent chat history.
+  if (uiHistWaitWorkerIdle()) _msgs_dirty = true;   // cancelled snapshot = unwritten data
   if (_threads_dirty) saveThreadsToStorage();
   if (_msgs_dirty) saveMsgsToStorage();
   discoveredFlushNow();   // persist the Discovered ring before we go down

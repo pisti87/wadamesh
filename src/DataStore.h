@@ -52,7 +52,10 @@ public:
   bool loadMainIdentity(mesh::LocalIdentity &identity);
   bool saveMainIdentity(const mesh::LocalIdentity &identity);
   void loadPrefs(NodePrefs& prefs, double& node_lat, double& node_lon);
-  void savePrefs(const NodePrefs& prefs, double node_lat, double node_lon);
+  // Crash-safe: writes /new_prefs.tmp, then swaps it in. Returns false when the
+  // write or the swap failed (storage full / torn) so callers can surface it —
+  // the save used to fail silently and the UI toasted "saved" regardless.
+  bool savePrefs(const NodePrefs& prefs, double node_lat, double node_lon);
   void loadContacts(DataStoreHost* host);
   void saveContacts(DataStoreHost* host, bool (*filter)(const ContactInfo& c) = NULL);
   void loadChannels(DataStoreHost* host);

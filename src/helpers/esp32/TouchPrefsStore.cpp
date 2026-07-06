@@ -1646,15 +1646,23 @@ void touchPrefsSetKbdBacklight(uint8_t pct) { if (pct > 100) pct = 100; if (!s_b
 // Per-channel mute (name-keyed NVS blob "chm" + tiny RAM cache) --------------
 static const char* KEY_CHM = "chm";
 static const int   CHM_ENTRY = TOUCH_CHMUTE_NAME + 1;   // 32-byte name + 1 flag byte
-static uint8_t     s_chm[TOUCH_CHMUTE_MAX * CHM_ENTRY];
+// PSRAM-first (internal fallback), zero-initialized — keeps these keyed tables
+// off the scarce internal SRAM (same pattern as UITask's psAlloc).
+static void* tpPsAlloc(size_t n) {
+  void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM);
+  if (!p) p = heap_caps_malloc(n, MALLOC_CAP_8BIT);
+  if (p) memset(p, 0, n);
+  return p;
+}
+static uint8_t*    s_chm = (uint8_t*)tpPsAlloc(TOUCH_CHMUTE_MAX * CHM_ENTRY);
 static int         s_chm_n = -1;   // -1 = not loaded yet
 static void chmLoad() {
   if (s_chm_n >= 0) return;
   s_chm_n = 0;
   if (!s_begun) touchPrefsBegin();
   if (!s_prefs.isKey(KEY_CHM)) return;
-  size_t n = s_prefs.getBytes(KEY_CHM, s_chm, sizeof(s_chm));
-  if (n == 0 || n > sizeof(s_chm)) { s_chm_n = 0; return; }
+  size_t n = s_prefs.getBytes(KEY_CHM, s_chm, (size_t)(TOUCH_CHMUTE_MAX * CHM_ENTRY));
+  if (n == 0 || n > (size_t)(TOUCH_CHMUTE_MAX * CHM_ENTRY)) { s_chm_n = 0; return; }
   s_chm_n = (int)(n / CHM_ENTRY);
 }
 static int chmFind(const char* name) {
@@ -1703,15 +1711,15 @@ static const int   CHE_GLYPH = 16;
 static const int   CHE_ENTRY = CHE_NAME + CHE_GLYPH;
 static const int   CHE_MAX   = 24;
 static const char* KEY_CHE   = "chemoji";
-static uint8_t     s_che[CHE_MAX * CHE_ENTRY];
+static uint8_t*    s_che = (uint8_t*)tpPsAlloc(CHE_MAX * CHE_ENTRY);
 static int         s_che_n = -1;   // -1 = not loaded yet
 static void cheLoad() {
   if (s_che_n >= 0) return;
   s_che_n = 0;
   if (!s_begun) touchPrefsBegin();
   if (!s_prefs.isKey(KEY_CHE)) return;
-  size_t n = s_prefs.getBytes(KEY_CHE, s_che, sizeof(s_che));
-  if (n == 0 || n > sizeof(s_che)) { s_che_n = 0; return; }
+  size_t n = s_prefs.getBytes(KEY_CHE, s_che, (size_t)(CHE_MAX * CHE_ENTRY));
+  if (n == 0 || n > (size_t)(CHE_MAX * CHE_ENTRY)) { s_che_n = 0; return; }
   s_che_n = (int)(n / CHE_ENTRY);
 }
 static int cheFind(const char* name) {

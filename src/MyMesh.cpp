@@ -265,7 +265,15 @@ struct MeshcomodCmdCacheEntry {
   uint32_t seen_ms;
   char text[128];
 };
-static MeshcomodCmdCacheEntry s_meshcomod_cmd_cache[MESHCOMOD_CMD_CACHE_SIZE] = {};
+// PSRAM-first (internal fallback), zero-initialized (0.8 KB off internal .bss).
+static void* msPsAlloc(size_t n) {
+  void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM);
+  if (!p) p = heap_caps_malloc(n, MALLOC_CAP_8BIT);
+  if (p) memset(p, 0, n);
+  return p;
+}
+static MeshcomodCmdCacheEntry* s_meshcomod_cmd_cache =
+    (MeshcomodCmdCacheEntry*)msPsAlloc(sizeof(MeshcomodCmdCacheEntry) * MESHCOMOD_CMD_CACHE_SIZE);
 static int s_meshcomod_cmd_cache_next = 0;
 static uint32_t s_meshcomod_last_reply_ts = 0;
 static uint32_t s_last_cmd_txt_ts = 0;

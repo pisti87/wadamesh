@@ -242,10 +242,19 @@ bool DataStore::saveMainIdentity(const mesh::LocalIdentity &identity) {
 void DataStore::loadPrefs(NodePrefs& prefs, double& node_lat, double& node_lon) {
   if (_fs->exists(_rp("/new_prefs"))) {
     loadPrefsInt("/new_prefs", prefs, node_lat, node_lon); // new filename
+  } else if (_fs->exists(_rp("/new_prefs.tmp"))) {
+    // Main file gone but a staged copy exists: a reboot landed between the temp
+    // write and the swap (or the swap was torn). Recover from it — this is the
+    // "device booted with the default name once" failure mode.
+    MESH_DEBUG_PRINTLN("DataStore: /new_prefs missing, recovering from .tmp");
+    loadPrefsInt("/new_prefs.tmp", prefs, node_lat, node_lon);
+    savePrefs(prefs, node_lat, node_lon);                // re-establish the main file
   } else if (_fs->exists(_rp("/node_prefs"))) {
     loadPrefsInt("/node_prefs", prefs, node_lat, node_lon);
     savePrefs(prefs, node_lat, node_lon);                // save to new filename
     _fs->remove(_rp("/node_prefs")); // remove old
+  } else {
+    MESH_DEBUG_PRINTLN("DataStore: no prefs file found — using defaults");
   }
 }
 
@@ -339,8 +348,12 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   }
 }
 
-void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_lon) {
-  File file = openWrite(_fs, "/new_prefs");
+bool DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_lon) {
+  // Write to a temp file first and swap it in afterwards: a reboot / power cut
+  // mid-write can then never destroy the only copy (the loader recovers from
+  // whichever file survived). SPIFFS has no atomic rename-over, so the swap is
+  // remove+rename — the loader handles the tiny between-steps window too.
+  File file = openWrite(_fs, "/new_prefs.tmp");
   if (file) {
     uint8_t pad[8];
     memset(pad, 0, sizeof(pad));
@@ -377,10 +390,17 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));       // 91
     file.write((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));         // 92
     file.write((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));    // 93
-    file.write((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));      // 125
+    size_t last = file.write((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key)); // 125
 
     file.close();
+    if (last != sizeof(_prefs.default_scope_key)) {
+      _fs->remove(_rp("/new_prefs.tmp"));   // short write (storage full?) — keep the old main file
+      return false;
+    }
+    _fs->remove(_rp("/new_prefs"));
+    return _fs->rename(_rp("/new_prefs.tmp"), _rp("/new_prefs"));
   }
+  return false;
 }
 
 void DataStore::loadContacts(DataStoreHost* host) {

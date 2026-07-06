@@ -731,7 +731,7 @@ public:
 private:
 
 public:
-  void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
+  bool savePrefs() { return _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
 
   // Set the default flood scope (region) used to tag outgoing flood packets, so
   // repeaters on region-scoped networks ("flood only for their region") will

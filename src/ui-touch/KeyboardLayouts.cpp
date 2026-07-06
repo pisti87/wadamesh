@@ -27,7 +27,7 @@ static constexpr lv_btnmatrix_ctrl_t KC(uint8_t width_mul) {
 /* ---------- Bulgarian on-screen keyboard ---------- */
 
 /* Lower-case Cyrillic, 3 letter rows + 1 control row. */
-static const char* kb_bg_lower[] = {
+static const char* const kb_bg_lower[] = {
     "я","в","е","р","т","ъ","у","и","о","п","\n",
     "а","с","д","ф","г","х","й","к","л","ь","\n",
     "з","ц","ч","ж","б","н","м","ш","щ","ю","\n",
@@ -42,7 +42,7 @@ static const lv_btnmatrix_ctrl_t kb_bg_lower_ctrl[] = {
 };
 
 /* Upper-case Cyrillic. */
-static const char* kb_bg_upper[] = {
+static const char* const kb_bg_upper[] = {
     "Я","В","Е","Р","Т","Ъ","У","И","О","П","\n",
     "А","С","Д","Ф","Г","Х","Й","К","Л","Ь","\n",
     "З","Ц","Ч","Ж","Б","Н","М","Ш","Щ","Ю","\n",
@@ -58,7 +58,7 @@ static const lv_btnmatrix_ctrl_t kb_bg_upper_ctrl[] = {
 
 /* ---------- Russian (ЙЦУКЕН) on-screen keyboard ---------- */
 /* Standard Russian layout, 3 rows of 11 = all 33 letters. */
-static const char* kb_ru_lower[] = {
+static const char* const kb_ru_lower[] = {
     "й","ц","у","к","е","н","г","ш","щ","з","х","\n",
     "ф","ы","в","а","п","р","о","л","д","ж","э","\n",
     "я","ч","с","м","и","т","ь","б","ю","ъ","ё","\n",
@@ -72,7 +72,7 @@ static const lv_btnmatrix_ctrl_t kb_ru_lower_ctrl[] = {
     KC(2), KC(1), KC(4), KC(2), KC(1)
 };
 
-static const char* kb_ru_upper[] = {
+static const char* const kb_ru_upper[] = {
     "Й","Ц","У","К","Е","Н","Г","Ш","Щ","З","Х","\n",
     "Ф","Ы","В","А","П","Р","О","Л","Д","Ж","Э","\n",
     "Я","Ч","С","М","И","Т","Ь","Б","Ю","Ъ","Ё","\n",
@@ -88,7 +88,7 @@ static const lv_btnmatrix_ctrl_t kb_ru_upper_ctrl[] = {
 
 /* ---------- Ukrainian on-screen keyboard ---------- */
 /* Standard Ukrainian layout, 3 rows of 11 = all 33 letters. */
-static const char* kb_uk_lower[] = {
+static const char* const kb_uk_lower[] = {
     "й","ц","у","к","е","н","г","ш","щ","з","х","\n",
     "ф","і","в","а","п","р","о","л","д","ж","є","\n",
     "я","ч","с","м","и","т","ь","б","ю","ї","ґ","\n",
@@ -100,7 +100,7 @@ static const lv_btnmatrix_ctrl_t kb_uk_lower_ctrl[] = {
     0,0,0,0,0,0,0,0,0,0,0,
     KC(2), KC(1), KC(4), KC(2), KC(1)
 };
-static const char* kb_uk_upper[] = {
+static const char* const kb_uk_upper[] = {
     "Й","Ц","У","К","Е","Н","Г","Ш","Щ","З","Х","\n",
     "Ф","І","В","А","П","Р","О","Л","Д","Ж","Є","\n",
     "Я","Ч","С","М","И","Т","Ь","Б","Ю","Ї","Ґ","\n",
@@ -115,7 +115,7 @@ static const lv_btnmatrix_ctrl_t kb_uk_upper_ctrl[] = {
 
 /* ---------- Serbian (Cyrillic) on-screen keyboard ---------- */
 /* Serbian azbuka, 3 rows of 10 = all 30 letters. */
-static const char* kb_sr_lower[] = {
+static const char* const kb_sr_lower[] = {
     "љ","њ","е","р","т","з","у","и","о","п","\n",
     "а","с","д","ф","г","х","ј","к","л","ч","\n",
     "ж","џ","ц","в","б","н","м","ђ","ћ","ш","\n",
@@ -127,7 +127,7 @@ static const lv_btnmatrix_ctrl_t kb_sr_lower_ctrl[] = {
     0,0,0,0,0,0,0,0,0,0,
     KC(2), KC(1), KC(4), KC(2), KC(1)
 };
-static const char* kb_sr_upper[] = {
+static const char* const kb_sr_upper[] = {
     "Љ","Њ","Е","Р","Т","З","У","И","О","П","\n",
     "А","С","Д","Ф","Г","Х","Ј","К","Л","Ч","\n",
     "Ж","Џ","Ц","В","Б","Н","М","Ђ","Ћ","Ш","\n",
@@ -142,7 +142,7 @@ static const lv_btnmatrix_ctrl_t kb_sr_upper_ctrl[] = {
 
 /* ---------- Greek on-screen keyboard ---------- */
 /* ΕΛΟΤ-style positions; 9+9+7 = all 24 letters (+ final sigma ς). */
-static const char* kb_el_lower[] = {
+static const char* const kb_el_lower[] = {
     "ς","ε","ρ","τ","υ","θ","ι","ο","π","\n",
     "α","σ","δ","φ","γ","η","ξ","κ","λ","\n",
     "ζ","χ","ψ","ω","β","ν","μ","\n",
@@ -154,7 +154,7 @@ static const lv_btnmatrix_ctrl_t kb_el_lower_ctrl[] = {
     0,0,0,0,0,0,0,
     KC(2), KC(1), KC(4), KC(2), KC(1)
 };
-static const char* kb_el_upper[] = {
+static const char* const kb_el_upper[] = {
     "Σ","Ε","Ρ","Τ","Υ","Θ","Ι","Ο","Π","\n",
     "Α","Σ","Δ","Φ","Γ","Η","Ξ","Κ","Λ","\n",
     "Ζ","Χ","Ψ","Ω","Β","Ν","Μ","\n",
@@ -171,7 +171,7 @@ static const lv_btnmatrix_ctrl_t kb_el_upper_ctrl[] = {
 /* Arabic-101 letter positions, 3 rows of 11 = all 28 letters + ة ى ء ئ ؤ و.
  * Arabic is unicameral, so the same map serves LOWER and UPPER. The text
  * field renders RTL + shaped via LV_USE_BIDI / LV_USE_ARABIC_PERSIAN_CHARS. */
-static const char* kb_ar_lower[] = {
+static const char* const kb_ar_lower[] = {
     "ض","ص","ث","ق","ف","غ","ع","ه","خ","ح","ج","\n",
     "ش","س","ي","ب","ل","ا","ت","ن","م","ك","ط","\n",
     "ئ","ء","ؤ","ر","ى","ة","و","ز","ظ","ذ","د","\n",
@@ -193,7 +193,7 @@ static const lv_btnmatrix_ctrl_t kb_ar_lower_ctrl[] = {
  * copy to restore it when the user cycles back to English. EN_KB_BTN mirrors the
  * library's private LV_KB_BTN (popover preview + width). */
 #define EN_KB_BTN(w) (LV_BTNMATRIX_CTRL_POPOVER | (w))
-static const char* kb_en_lower[] = {
+static const char* const kb_en_lower[] = {
     "1#", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", LV_SYMBOL_BACKSPACE, "\n",
     "ABC", "a", "s", "d", "f", "g", "h", "j", "k", "l", LV_SYMBOL_NEW_LINE, "\n",
     "_", "-", "z", "x", "c", "v", "b", "n", "m", ".", ",", ":", "\n",
@@ -207,7 +207,7 @@ static const lv_btnmatrix_ctrl_t kb_en_lower_ctrl[] = {
     LV_KEYBOARD_CTRL_BTN_FLAGS | 2, LV_BTNMATRIX_CTRL_CHECKED | 2, 6, LV_BTNMATRIX_CTRL_CHECKED | 2, LV_KEYBOARD_CTRL_BTN_FLAGS | 2
 };
 
-static const char* kb_en_upper[] = {
+static const char* const kb_en_upper[] = {
     "1#", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", LV_SYMBOL_BACKSPACE, "\n",
     "abc", "A", "S", "D", "F", "G", "H", "J", "K", "L", LV_SYMBOL_NEW_LINE, "\n",
     "_", "-", "Z", "X", "C", "V", "B", "N", "M", ".", ",", ":", "\n",
@@ -224,7 +224,7 @@ static const lv_btnmatrix_ctrl_t kb_en_upper_ctrl[] = {
 /* ---------- French (AZERTY) on-screen keyboard ---------- */
 /* Keeps the proven LVGL control rows/punctuation, but swaps the alpha rows to
  * a familiar French AZERTY order. Accents still come from the existing popup. */
-static const char* kb_fr_lower[] = {
+static const char* const kb_fr_lower[] = {
     "1#", "a", "z", "e", "r", "t", "y", "u", "i", "o", "p", LV_SYMBOL_BACKSPACE, "\n",
     "ABC", "q", "s", "d", "f", "g", "h", "j", "k", "l", "m", LV_SYMBOL_NEW_LINE, "\n",
     "_", "-", "w", "x", "c", "v", "b", "n", ".", ",", ":", "", "\n",
@@ -238,7 +238,7 @@ static const lv_btnmatrix_ctrl_t kb_fr_lower_ctrl[] = {
     LV_KEYBOARD_CTRL_BTN_FLAGS | 2, LV_BTNMATRIX_CTRL_CHECKED | 2, 6, LV_BTNMATRIX_CTRL_CHECKED | 2, LV_KEYBOARD_CTRL_BTN_FLAGS | 2
 };
 
-static const char* kb_fr_upper[] = {
+static const char* const kb_fr_upper[] = {
     "1#", "A", "Z", "E", "R", "T", "Y", "U", "I", "O", "P", LV_SYMBOL_BACKSPACE, "\n",
     "abc", "Q", "S", "D", "F", "G", "H", "J", "K", "L", "M", LV_SYMBOL_NEW_LINE, "\n",
     "_", "-", "W", "X", "C", "V", "B", "N", ".", ",", ":", "", "\n",
@@ -254,7 +254,7 @@ static const lv_btnmatrix_ctrl_t kb_fr_upper_ctrl[] = {
 
 /* Dutch largely stays QWERTY, but a dedicated IJ key makes the most common
  * digraph directly reachable without forcing users through the accent popup. */
-static const char* kb_nl_lower[] = {
+static const char* const kb_nl_lower[] = {
     "1#", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", LV_SYMBOL_BACKSPACE, "\n",
     "ABC", "a", "s", "d", "f", "g", "h", "j", "k", "l", LV_SYMBOL_NEW_LINE, "\n",
     "_", "-", "z", "x", "c", "v", "b", "n", "m", ".", ",", "ij", "\n",
@@ -268,7 +268,7 @@ static const lv_btnmatrix_ctrl_t kb_nl_lower_ctrl[] = {
     LV_KEYBOARD_CTRL_BTN_FLAGS | 2, LV_BTNMATRIX_CTRL_CHECKED | 2, 6, LV_BTNMATRIX_CTRL_CHECKED | 2, LV_KEYBOARD_CTRL_BTN_FLAGS | 2
 };
 
-static const char* kb_nl_upper[] = {
+static const char* const kb_nl_upper[] = {
     "1#", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", LV_SYMBOL_BACKSPACE, "\n",
     "abc", "A", "S", "D", "F", "G", "H", "J", "K", "L", LV_SYMBOL_NEW_LINE, "\n",
     "_", "-", "Z", "X", "C", "V", "B", "N", "M", ".", ",", "IJ", "\n",
@@ -284,7 +284,7 @@ static const lv_btnmatrix_ctrl_t kb_nl_upper_ctrl[] = {
 
 /* German QWERTZ keeps the proven LVGL control rows and swaps the Y/Z alpha
  * positions. Umlauts / eszett still come from the accent popup. */
-static const char* kb_de_lower[] = {
+static const char* const kb_de_lower[] = {
     "1#", "q", "w", "e", "r", "t", "z", "u", "i", "o", "p", LV_SYMBOL_BACKSPACE, "\n",
     "ABC", "a", "s", "d", "f", "g", "h", "j", "k", "l", LV_SYMBOL_NEW_LINE, "\n",
     "_", "-", "y", "x", "c", "v", "b", "n", "m", ".", ",", ":", "\n",
@@ -298,7 +298,7 @@ static const lv_btnmatrix_ctrl_t kb_de_lower_ctrl[] = {
     LV_KEYBOARD_CTRL_BTN_FLAGS | 2, LV_BTNMATRIX_CTRL_CHECKED | 2, 6, LV_BTNMATRIX_CTRL_CHECKED | 2, LV_KEYBOARD_CTRL_BTN_FLAGS | 2
 };
 
-static const char* kb_de_upper[] = {
+static const char* const kb_de_upper[] = {
     "1#", "Q", "W", "E", "R", "T", "Z", "U", "I", "O", "P", LV_SYMBOL_BACKSPACE, "\n",
     "abc", "A", "S", "D", "F", "G", "H", "J", "K", "L", LV_SYMBOL_NEW_LINE, "\n",
     "_", "-", "Y", "X", "C", "V", "B", "N", "M", ".", ",", ":", "\n",
@@ -313,7 +313,7 @@ static const lv_btnmatrix_ctrl_t kb_de_upper_ctrl[] = {
 };
 
 /* Spanish keeps QWERTY but promotes n-tilde directly onto the alpha deck. */
-static const char* kb_es_lower[] = {
+static const char* const kb_es_lower[] = {
     "1#", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", LV_SYMBOL_BACKSPACE, "\n",
     "ABC", "a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ", LV_SYMBOL_NEW_LINE, "\n",
     "_", "-", "z", "x", "c", "v", "b", "n", "m", ".", ",", ":", "\n",
@@ -327,7 +327,7 @@ static const lv_btnmatrix_ctrl_t kb_es_lower_ctrl[] = {
     LV_KEYBOARD_CTRL_BTN_FLAGS | 2, LV_BTNMATRIX_CTRL_CHECKED | 2, 6, LV_BTNMATRIX_CTRL_CHECKED | 2, LV_KEYBOARD_CTRL_BTN_FLAGS | 2
 };
 
-static const char* kb_es_upper[] = {
+static const char* const kb_es_upper[] = {
     "1#", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", LV_SYMBOL_BACKSPACE, "\n",
     "abc", "A", "S", "D", "F", "G", "H", "J", "K", "L", "Ñ", LV_SYMBOL_NEW_LINE, "\n",
     "_", "-", "Z", "X", "C", "V", "B", "N", "M", ".", ",", ":", "\n",
@@ -342,7 +342,7 @@ static const lv_btnmatrix_ctrl_t kb_es_upper_ctrl[] = {
 };
 
 /* Italian gets the common accented vowels directly on the base layer. */
-static const char* kb_it_lower[] = {
+static const char* const kb_it_lower[] = {
     "1#", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", LV_SYMBOL_BACKSPACE, "\n",
     "ABC", "a", "s", "d", "f", "g", "h", "j", "k", "l", "à", LV_SYMBOL_NEW_LINE, "\n",
     "è", "ì", "z", "x", "c", "v", "b", "n", "m", ".", ",", ":", "\n",
@@ -356,7 +356,7 @@ static const lv_btnmatrix_ctrl_t kb_it_lower_ctrl[] = {
     LV_KEYBOARD_CTRL_BTN_FLAGS | 2, LV_BTNMATRIX_CTRL_CHECKED | 2, 6, LV_BTNMATRIX_CTRL_CHECKED | 2, LV_KEYBOARD_CTRL_BTN_FLAGS | 2
 };
 
-static const char* kb_it_upper[] = {
+static const char* const kb_it_upper[] = {
     "1#", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", LV_SYMBOL_BACKSPACE, "\n",
     "abc", "A", "S", "D", "F", "G", "H", "J", "K", "L", "À", LV_SYMBOL_NEW_LINE, "\n",
     "È", "Ì", "Z", "X", "C", "V", "B", "N", "M", ".", ",", ":", "\n",
@@ -373,9 +373,9 @@ static const lv_btnmatrix_ctrl_t kb_it_upper_ctrl[] = {
 struct OsKeyboardLayout {
     KeyboardLayoutId id;
     const char*      name;
-    const char**     lower_map;
+    const char* const* lower_map;
     const lv_btnmatrix_ctrl_t* lower_ctrl;
-    const char**     upper_map;
+    const char* const* upper_map;
     const lv_btnmatrix_ctrl_t* upper_ctrl;
 };
 
@@ -691,8 +691,8 @@ void keyboardLayoutsApply(lv_obj_t* keyboard, KeyboardLayoutId id) {
     s_current_layout = id;
 
   const OsKeyboardLayout& lo = k_os_layouts[static_cast<int>(id)];
-  lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER, lo.lower_map, lo.lower_ctrl);
-  lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_TEXT_UPPER, lo.upper_map, lo.upper_ctrl);
+  lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER, const_cast<const char**>(lo.lower_map), lo.lower_ctrl);   // maps now in flash; LVGL never writes them
+  lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_TEXT_UPPER, const_cast<const char**>(lo.upper_map), lo.upper_ctrl);
 }
 
 KeyboardLayoutId keyboardLayoutsGetCurrent() {

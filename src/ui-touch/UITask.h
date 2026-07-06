@@ -443,7 +443,12 @@ public:
   void disableTcp() { if (_serial) _serial->disableTcp(); }
   bool hasBleCapability() const { return _serial && _serial->hasBleCapability(); }
   bool isBleEnabled() const { return _serial && _serial->isBleEnabled(); }
-  void enableBle() { if (_serial) _serial->enableBle(); }
+  // Live BLE enable, guarded like the boot co-init in main.cpp: NimBLE needs
+  // ~50 KB free internal heap + a 20 KB contiguous block, and starting it below
+  // that does not fail cleanly — it panics mid-init (the "reboots when I turn
+  // BLE on with Wi-Fi running" report). Returns false when refused; the caller
+  // shows the reason and reverts its switch. Defined in UITask.cpp.
+  bool enableBle();
   void disableBle() { if (_serial) _serial->disableBle(); }
   int getWsConnectedCount() const { return _serial ? _serial->getWsConnectedCount() : 0; }
   void setDeviceTimeFromSystemClock();

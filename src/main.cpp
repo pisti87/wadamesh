@@ -67,7 +67,21 @@ static uint32_t _atoi(const char* sp) {
   #ifdef MULTI_TRANSPORT_COMPANION
     #include <helpers/esp32/MultiTransportCompanionInterface.h>
     #include "helpers/esp32/MqttBridge.h"
-    MultiTransportCompanionInterface serial_interface;
+    #include <esp_heap_caps.h>
+    #include <new>
+    // ~9.2 KB of TCP/WS/USB framing buffers. Internal DRAM is the scarce pool on
+    // the touch boards (Wi-Fi + BLE coexistence needs ~50 KB free), and none of
+    // these buffers are touched from ISR context, so build the whole object in
+    // PSRAM (heap is up before C++ static init on ESP32; falls back to internal
+    // RAM if PSRAM is absent). In-TU init order runs this before
+    // ui_task(&serial_interface) further down.
+    static void* s_si_mem = [] {
+      void* p = heap_caps_malloc(sizeof(MultiTransportCompanionInterface),
+                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      return p ? p : malloc(sizeof(MultiTransportCompanionInterface));
+    }();
+    MultiTransportCompanionInterface& serial_interface =
+        *new (s_si_mem) MultiTransportCompanionInterface();
     #ifndef TCP_PORT
       #define TCP_PORT 5000
     #endif
