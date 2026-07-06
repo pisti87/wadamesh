@@ -58,8 +58,10 @@
     #define MC_FM_FAT32 0x02  // FatFs f_mkfs option: force FAT32
   #endif
   #ifndef PIN_SD_CS
-    #define PIN_SD_CS 39      // T-Deck microSD chip-select
+    #define PIN_SD_CS 39      // T-Deck microSD chip-select (M9 sets its own via build flags)
   #endif
+#endif
+#if defined(HAS_TDECK_GT911)
   #include <driver/i2s.h>     // T-Deck MAX98357A speaker amp (notification tones)
   // T-Deck I2S audio amp pins (MAX98357A, no MCLK). Overridable via build flags.
   #ifndef PIN_I2S_BCK
@@ -88,6 +90,8 @@
   #endif
   #if defined(HAS_TDECK_KEYBOARD)
     #include <helpers/input/TDeckKeyboard.h>
+  #elif defined(HAS_M9_KEYBOARD)
+    #include <M9Keyboard.h>
   #endif
   #include "KeyboardLayouts.h"
   #include "i18n.h"
@@ -1141,6 +1145,18 @@ static bool tbFingerTouchOnTabBarBlocked(uint16_t y) {
 #if defined(HAS_TANMATSU)
 // Keyboard-only device: nav is always on. (The trackball #if above declares this for the T-Deck.)
 static bool s_kbd_nav = true;
+#endif
+
+#if defined(HAS_THINKNODE_M9)
+// Keyboard-only device (no touch, no trackball): nav is always on, same as Tanmatsu above.
+// Unlike Tanmatsu (which registers its KEYPAD indev as the PRIMARY one, driven by navPump()
+// reading bsp-input), the M9 takes the CAP_KEYPAD_NAV "secondary indev" path the T-Deck's
+// trackball block above uses — fed by handleHwKey() instead — so it needs the SAME three
+// symbols that block declares for the T-Deck (s_kbd_nav/s_tb_nav/s_nav_keypad_drv), just
+// without any of the actual trackball-cursor state above (no trackball on this board).
+static bool           s_kbd_nav        = true;
+static bool           s_tb_nav         = false;  // no trackball — read by the shared nav-rebuild gate, never set
+static lv_indev_drv_t s_nav_keypad_drv;
 #endif
 
 // ---- Panel currently linked to the keyboard (or nullptr) ----
@@ -5580,7 +5596,7 @@ static void threadSelectCb(lv_event_t* e) {
   // which collapses the content so the open-scroll lands at the top. Visible first = correct
   // heights = the open-scroll reaches the newest message.
   refreshChatDetail(p);
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
   // Physical keyboard: focus the composer on open so typing goes straight in.
   showKb(&p);
 #endif
@@ -6316,7 +6332,7 @@ static void settingsFieldFocusCb(lv_event_t* e) {
 #endif
 }
 
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
 // Recursively find the first text field under `obj` (depth-first).
 static lv_obj_t* findFirstTextarea(lv_obj_t* obj) {
   if (!obj) return nullptr;
@@ -6859,7 +6875,7 @@ static lv_obj_t* createSettingsModal(const char* title, SettingsModalKind kind) 
   g_set_modal.root = root;
   g_set_modal.kind = kind;
   s_settings_content_w = (sw - 8) - 12;   // modal body width minus its 6px padding each side
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
   // Physical keyboard: once the caller has finished adding this modal's fields
   // (deferred to the next frame), focus its first text field so the user can
   // type straight away. Popup modals only — the inline-settings path returns above.
@@ -8904,7 +8920,7 @@ static void useMilesToggleCb(lv_event_t* e) {
 // only via the on-screen button — Tim kept firing messages on the public
 // channel by accident. Physical keyboard only (the on-screen keyboard's
 // checkmark never auto-sent).
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
 static void enterSendsToggleCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
   const bool on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
@@ -9530,7 +9546,7 @@ static void lockwallDisplayName(const char* path, char* out, int cap) {
   snprintf(out, cap, "%s%s", sd ? "SD: " : "", base);
 }
 static void openLockWallPickerCb(lv_event_t* e);   // defined with the picker, below
-#if CAP_SD   // custom WAV notification sounds need an SD card (the File-Manager picker browses it)
+#if CAP_SD && defined(HAS_TDECK_GT911)   // custom WAV notification sounds need the T-Deck's I2S amp, not just SD
 // Per-event notification-sound picker (Settings -> Sound). Mirrors the wallpaper picker.
 static lv_obj_t* s_snd_btn_lbl[3] = { nullptr, nullptr, nullptr };
 static int  s_snd_pending_slot = TOUCH_SND_MSG;    // slot we're choosing a sound for
@@ -9724,7 +9740,7 @@ static void buildDeviceSettings(int sec) {
     lv_obj_add_event_cb(sw, toggleMentionSoundCb, LV_EVENT_VALUE_CHANGED, nullptr);
     y += LV_MAX(34, rh + 12);
   }
-#if CAP_SD   // WAV notification-sound rows (SD-card devices only)
+#if CAP_SD && defined(HAS_TDECK_GT911)   // WAV notification-sound rows (T-Deck's I2S amp, not just SD)
   // Per-event notification sound files. Each slot: built-in chime, or a 16-bit
   // PCM WAV from /sounds/ (internal) or the SD card. Empty = built-in.
   {
@@ -10026,7 +10042,7 @@ static void buildDeviceSettings(int sec) {
   {
     y += settingsRowLabel(body, y, 0, "Secondary keyboards", COLOR_SUB, &g_font_12, 0) + 2;
 
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
     const char* kb_cycle_hint = "double-tap SPACE cycles through the ones you enable";
 #else
     const char* kb_cycle_hint = "tap the language key (e.g. EN) on the keyboard to cycle the ones you enable";
@@ -10074,7 +10090,7 @@ static void buildDeviceSettings(int sec) {
                           COLOR_SUB, &g_font_12, 0) + 2;
   }
 
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
   /* Enter sends the message (default) vs. inserts a newline so you send only via
      the on-screen button — avoids accidental sends on the public channel. */
   {
@@ -10141,7 +10157,7 @@ static void buildDeviceSettings(int sec) {
 #endif
 
 #if CAP_TRACKBALL
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
   /* Keyboard navigation: off (default) vs on. When no text field is focused, the
      WASDZ cluster moves focus so the whole UI is reachable from the keyboard (incl.
      Settings), and the tab hotkeys below jump straight to a tab. The trackball
@@ -16042,6 +16058,11 @@ static bool fmSdTryMount() {
   // one walks the whole ladder (~2.7 s worst case, loop WDT dropped below). The
   // clock that succeeds becomes the operating clock — slower is fine here (the
   // file list + a settings backup are small; map tiles live on internal flash).
+  // UNVERIFIED on the M9: this ladder was tuned against the T-Deck's shared
+  // bus electrically — the M9 shares the same three signals (SCLK/MISO/MOSI)
+  // across radio+LCD+SD too, but timing margins haven't been confirmed on
+  // real M9 hardware yet. If SD never mounts, or mounts unreliably, this is
+  // the first place to look.
   static const struct { uint16_t settle_ms; uint32_t hz; } kMountLadder[] = {
     {  40, 4000000 }, { 120, 4000000 }, { 200, 4000000 },
     { 300, 1000000 }, { 450, 1000000 }, { 650,  400000 }, { 900, 400000 },
@@ -16868,7 +16889,7 @@ static void fmSetWallpaperCb(lv_event_t* e) {
   if (g_lv.task) g_lv.task->showAlert(TR("Lock wallpaper set"), 1300);
 }
 
-#if CAP_SD
+#if CAP_SD && defined(HAS_TDECK_GT911)
 // ---- .wav -> notification-sound chooser (opened from the File Manager) ------
 static char      s_fm_snd_path[208] = {0};
 static bool      s_fm_snd_on_sd     = false;
@@ -17101,7 +17122,7 @@ static void fmRowClickCb(lv_event_t* e) {
   FmRowData* rd = (FmRowData*)lv_obj_get_user_data(lv_event_get_target(e));
   if (!rd) return;
   if (rd->isdir)                fmEnterDir(rd->name);
-#if CAP_SD
+#if CAP_SD && defined(HAS_TDECK_GT911)
   else if (fmIsAudio(rd->name)) fmOpenAudio(rd->name);   // .wav -> notification-sound chooser
 #endif
   else if (fmIsImage(rd->name)) fmOpenImage(rd->name);   // images -> read-only viewer
@@ -18973,7 +18994,7 @@ static void makeHome(lv_obj_t* tab) {
 #else
     // T-Deck (and any other non-Tanmatsu landscape board): evenly-spread slots.
     make_launcher(">_  Terminal", tdBtnY(1), homeTerminalCb, 0, td_btn_h);
-#if defined(HAS_TDECK_GT911)
+#if defined(HAS_TDECK_GT911) || defined(HAS_THINKNODE_M9)
     make_launcher(LV_SYMBOL_DIRECTORY "  Files", tdBtnY(2), homeFilesCb, 0, td_btn_h);
     // "Apps" (opens the app drawer) pops with the negative / inverse of the theme accent.
     g_lv.home_apps = make_launcher(LV_SYMBOL_LIST "  Apps", tdBtnY(3), homeAppsBtnCb, inv_accent, td_btn_h);
@@ -26902,7 +26923,7 @@ static bool anyPopupOpen() { return popupRegistryAny(); }
 static bool hwKeyDismissTopPopup() { return popupRegistryDismissTop(); }
 #endif  // HAS_TDECK_KEYBOARD || HAS_TANMATSU (hwKeyDismissTopPopup)
 
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
 // Keys that act as "close the popup" when no text field is focused. The user
 // picked the easy-to-find corner keys; there's no dedicated Esc on this keyboard.
 static bool isDismissKey(int key) {
@@ -27160,7 +27181,7 @@ static void serviceLockscreen() {
 }
 #endif  // core lock screen (HAS_TDECK_GT911 || HAS_TANMATSU)
 
-#if defined(HAS_TDECK_KEYBOARD)   // re-enter the keyboard block the lock screen was carved out of
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)   // re-enter the keyboard block the lock screen was carved out of
 #if defined(HAS_TDECK_GT911)   // wallpaper picker is SD/SPIFFS-backed -> T-Deck only
 // ---- Lock-screen wallpaper picker (lists JPEGs in internal /lock/ + SD) ----
 // ---- Notification-sound chooser (Settings -> Sound) ------------------------
@@ -27907,9 +27928,9 @@ static void buildBackupsSettings() {
 // Reopen the HAS_TDECK_KEYBOARD region paused above for the backup picker; it
 // closes at that region's original #endif further below. (The next #if is the
 // original spacebar-countdown guard, now nested one level deeper — harmless.)
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
 
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
 // ---- Spacebar lock countdown -------------------------------------------------
 // The spacebar locks the screen, but to avoid accidental locks it first runs a
 // 1 s "Locking…" countdown (tap anywhere, or press any other key, to cancel).
@@ -27998,16 +28019,16 @@ static void handleHwKey(int key) {
   // Remapping a tab hotkey (Settings → Keyboard): capture the next key press.
   if (s_navkey_capture >= 0) { navKeyCaptureApply(key); return; }
 #endif
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
   // Any key other than the lock key (space) aborts a pending lock countdown.
   if (s_locking_deadline && key != ' ') cancelLockingCountdown();
 #endif
   // The on-screen keyboard is never shown on the T-Deck, but a textarea is still
   // bound to it on focus — that binding is our target.
   lv_obj_t* ta_focused = lv_keyboard_get_textarea(g_lv.keyboard);
-#if CAP_TRACKBALL
+#if CAP_KEYPAD_NAV
   // Edit mode (keyboard-nav ON only): a focused field becomes the typing target after
-  // select/Enter (below) — until then `ta` is null so the letter-nav keys navigate. With
+  // select/Enter (below) — until then `ta` is null so the nav keys navigate. With
   // keyboard-nav OFF there is no navigation to protect (and no nav group to set the edit
   // flag), so a focused field always types directly — otherwise typing breaks entirely.
   lv_obj_t* ta = (ta_focused && (!s_kbd_nav || s_nav_ta_editing)) ? ta_focused : nullptr;
@@ -28015,9 +28036,11 @@ static void handleHwKey(int key) {
   lv_obj_t* ta = ta_focused;
 #endif
   if (!ta) {
-#if CAP_TRACKBALL
+#if CAP_KEYPAD_NAV
     // A field is focused but we're in navigate mode: select/Enter starts editing it, so the
-    // letter-nav keys keep navigating until you explicitly enter the field (matches navPump).
+    // nav keys keep navigating until you explicitly enter the field (matches navPump).
+    // M9_KEY_ENTER == '\r' (0x0D) — the M9 d-pad's centre/Enter byte already satisfies this
+    // check without any extra case.
     if (ta_focused && s_kbd_nav && (key == '\r' || key == '\n' || navDirForKey(key) == 4)) {
       s_nav_ta_editing = true;
       if (g_lv.task) g_lv.task->noteUserInput();
@@ -28027,7 +28050,7 @@ static void handleHwKey(int key) {
     // First-boot setup owns the screen: with no field focused, swallow the key
     // so it can't switch the (hidden) tabs behind the wizard or arm the lock.
     if (s_setup_root) return;
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
     // Spacebar (while NOT editing a text field) locks the screen: backlight off
     // + manual lock, so touch and trackball-scroll are ignored — only a
     // trackball CLICK unlocks it. The T-Deck's only side button is a hardware
@@ -28082,6 +28105,56 @@ static void handleHwKey(int key) {
         return;
       }
       if (on_textfield) { if (g_lv.task) g_lv.task->noteUserInput(); return; }   // field focused: never tab-jump on a letter
+    }
+#elif defined(HAS_M9_KEYBOARD)
+    // ThinkNode M9: the d-pad and dedicated function keys are FIXED hardware
+    // buttons (not remappable letters), so this drives navMoveDir/navSwitchTab
+    // directly off the raw keycodes (M9Keyboard.h) instead of going through
+    // navDirForKey's programmable letter table — same destination primitives
+    // the T-Deck's WASDZ block and Tanmatsu's navPump() use, just a different
+    // (fixed) source mapping. s_kbd_nav is always true on this board (no touch
+    // to fall back to — set at boot, see UITask.cpp's indev-registration block).
+    if (s_kbd_nav) {
+      switch (key) {
+        case M9_KEY_UP:    navMoveDir(NAV_UP);    s_nav_show = true; if (g_lv.task) g_lv.task->noteUserInput(); return;
+        case M9_KEY_DOWN:  navMoveDir(NAV_DOWN);  s_nav_show = true; if (g_lv.task) g_lv.task->noteUserInput(); return;
+        case M9_KEY_LEFT:
+          if (navOnTabBar()) navSwitchTab(-1); else navMoveDir(NAV_LEFT);
+          s_nav_show = true; if (g_lv.task) g_lv.task->noteUserInput(); return;
+        case M9_KEY_RIGHT:
+          if (navOnTabBar()) navSwitchTab(+1); else navMoveDir(NAV_RIGHT);
+          s_nav_show = true; if (g_lv.task) g_lv.task->noteUserInput(); return;
+        // M9_KEY_ENTER (0x0D) when a field is focused-but-not-editing is handled above
+        // (== '\r', starts editing). Reaching this switch means no field is focused —
+        // "select" on whatever's focused: tab bar -> next tab, else activate it.
+        case M9_KEY_ENTER:
+          if (navOnTabBar()) navSwitchTab(+1); else navPushTap(LV_KEY_ENTER);
+          s_nav_show = true; if (g_lv.task) g_lv.task->noteUserInput(); return;
+        case M9_KEY_HW_BACK:                                                      // back: popup → chat → ESC
+          if (anyPopupOpen())                            hwKeyDismissTopPopup();
+          else if (LvChatPanel* cp = navOpenChatPanel()) closeChatPanel(cp);       // close an open chat/channel first
+          else                                           navPushTap(LV_KEY_ESC);
+          s_nav_show = true; if (g_lv.task) g_lv.task->noteUserInput(); return;
+        // Dedicated function keys jump straight to a main tab — mirrors the T-Deck's
+        // programmable hotkeys, just fixed to these specific physical buttons instead
+        // of remappable letters. HOME mirrors tapping the Home tab (toggles the app
+        // drawer when already there, like homeKeyActivate on Tanmatsu).
+        case M9_KEY_HOME:
+          if (getActiveTab() == HOME_TAB_INDEX) setHomeDrawer(!s_home_drawer_mode);
+          else                                  navGoToMainTab(HOME_TAB_INDEX);
+          if (g_lv.task) g_lv.task->noteUserInput(); return;
+        case M9_KEY_LEFT_MESSAGE:
+        case M9_KEY_SUB_MESSAGE:
+          navGoToMainTab(CHAT_INBOX_TAB_INDEX);
+          if (g_lv.task) g_lv.task->noteUserInput(); return;
+        case M9_KEY_MAP:
+        case M9_KEY_SUB_MAP:
+          navGoToMainTab(MAP_TAB_INDEX);
+          if (g_lv.task) g_lv.task->noteUserInput(); return;
+        // M9_KEY_MIC / M9_KEY_CTRL: no action bound yet — fall through and get
+        // swallowed below (anyPopupOpen()/tabForKey() won't match these bytes either).
+        default: break;
+      }
     }
 #endif
     // Not editing a field. If a popup is up, the dismiss keys close it; on a
@@ -29377,7 +29450,7 @@ static void openThreadDetailByIdx(int idx, bool channel) {
   hideKb();
   if (p.overlay) { lv_obj_clear_flag(p.overlay, LV_OBJ_FLAG_HIDDEN); lv_obj_move_foreground(p.overlay); }
   refreshChatDetail(p);   // AFTER un-hiding so bubbles measure correctly and the open-scroll reaches the newest message
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
   showKb(&p);          // physical keyboard: auto-focus the composer so typing goes straight in
 #elif defined(HAS_TANMATSU)
   navMarkDirty();      // keypad nav: rebuild the focus group onto the chat overlay + focus the composer
@@ -35602,6 +35675,15 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     // default rotation is 270 -> we run the UI landscape (logical 800x480) via LVGL sw-rotate.
     s_ui_rotation = LV_DISP_ROT_270;
 #endif
+#if defined(HAS_THINKNODE_M9)
+    // M9 is landscape in hardware: boot DISPLAY_ROTATION=1 verified upright on
+    // the tester's unit (bring-up #6). Without this override the portrait
+    // default rendered LVGL at 240x320 into the 320x240 panel window — content
+    // sat left with the bottom wrapped ("a bit left and down", bring-up #7).
+    // ROT_90 maps to panel rotation 1 in applyHardwarePanelRotation, so the
+    // UI-init re-apply matches the boot splash orientation.
+    s_ui_rotation = LV_DISP_ROT_90;
+#endif
     // Apply the saved backlight brightness (takes the LEDA pin over from the
     // display's digitalWrite via LEDC PWM). Both touch boards have the LEDA pin.
 #if defined(HAS_CC_BRIGHTNESS)
@@ -35721,11 +35803,13 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     g_lv.indev_drv.read_cb = lvglTouchRead;
     g_lv.indev_drv.disp    = lv_disp_get_default();
     if (!lv_indev_drv_register(&g_lv.indev_drv)) pushDiagLine("LVGL indev failed");
-#if CAP_TRACKBALL
-    // Second indev for the optional keyboard ESDFX nav: a KEYPAD indev + focus
-    // group, registered always (cheap) but only DRIVEN when touchPrefsGetKbdNav()
-    // is on (handleHwKey feeds navFifo; navMaybeRebuild runs in the loop). With it
-    // off the group stays empty, so it shows no focus ring and does nothing.
+#if CAP_KEYPAD_NAV
+    // Second indev for the keyboard/d-pad nav: a KEYPAD indev + focus group.
+    // On the T-Deck it's optional (touchPrefsGetKbdNav()) since touch is the
+    // primary input; on the M9 (no touch at all) it's always driven — see
+    // s_kbd_nav below. (handleHwKey feeds navFifo; navMaybeRebuild runs in the
+    // loop.) With it off the group stays empty, so it shows no focus ring and
+    // does nothing.
     s_nav_group = lv_group_create();
     lv_group_set_focus_cb(s_nav_group, navFocusCb);   // amber focus ring + scroll-into-view
     lv_indev_drv_init(&s_nav_keypad_drv);
@@ -35735,7 +35819,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     if (lv_indev_t* kp = lv_indev_drv_register(&s_nav_keypad_drv)) lv_indev_set_group(kp, s_nav_group);
     else pushDiagLine("LVGL nav keypad indev failed");
 #if defined(ESP32)
-#if defined(HAS_TANMATSU)
+#if defined(HAS_TANMATSU) || defined(HAS_THINKNODE_M9)
     s_kbd_nav = true;   // keyboard-only device: nav is always on (no touch to fall back to)
 #else
     s_kbd_nav = touchPrefsGetKbdNav();
@@ -36017,7 +36101,7 @@ void UITask::openMeshContactDm(uint32_t mesh_contact_index) {
     lv_obj_move_foreground(g_lv.dm.overlay);
   }
   refreshChatDetail(g_lv.dm);   // AFTER un-hiding so bubbles measure correctly and the open-scroll reaches the newest message
-#if defined(HAS_TDECK_KEYBOARD)
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_M9_KEYBOARD)
   // Physical keyboard: focus the composer on open so typing goes straight in.
   showKb(&g_lv.dm);
 #endif
@@ -37355,6 +37439,22 @@ void UITask::loop() {
   tdeckKeyboardSetBacklight(kb_bl);
   serviceLockscreen();            // refresh the lock-screen clock on minute roll-over
   serviceLockingCountdown(now);   // advance / fire the spacebar "Locking…" countdown
+#elif defined(HAS_M9_KEYBOARD)
+  // M9's keyboard controller is on its OWN bus (Wire1) — no touch task shares
+  // it, so polling happens right here on the UI thread rather than from a
+  // separate core-0 task. No keyboard-backlight control exists on this
+  // controller (TODO — see M9_PORT.md if/when one is confirmed), so this is
+  // just poll + drain, no backlight tick.
+  m9KeyboardPoll();
+  for (int kbi = 0; kbi < 12; ++kbi) {
+    int key = m9KeyboardReadKey();
+    if (key <= 0) break;
+    Serial.printf("[M9KB] key=0x%02X\n", key);   // bring-up only: proves poll->ring->drain
+    if (!_screen_off) s_kb_last_key_ms = now;
+    handleHwKey(key);
+  }
+  serviceLockscreen();
+  serviceLockingCountdown(now);
 #endif
 #if defined(HAS_TANMATSU)
   // Drive the keyboard backlight from off/on/auto + the Keys-slider brightness; keep it
@@ -37525,9 +37625,10 @@ void UITask::loop() {
 #if defined(HAS_TANMATSU)
   navMaybeRebuild();   // keep the keyboard-nav focus group in sync with the visible screen
   navPump();           // drain bsp keys: queue focus moves, type straight into focused fields
-#elif CAP_TRACKBALL
+#elif CAP_KEYPAD_NAV
   // Keep the focus group synced whenever EITHER nav mode is active: the keyboard ESDFX nav
-  // (fed by handleHwKey) or the trackball D-pad nav (fed by updateTrackball -> navMoveDir).
+  // (T-Deck) / d-pad nav (M9) fed by handleHwKey, or the trackball D-pad nav (fed by
+  // updateTrackball -> navMoveDir).
   if (s_kbd_nav || s_tb_nav) navMaybeRebuild();
 #endif
   uiCp("ui:lvgl");

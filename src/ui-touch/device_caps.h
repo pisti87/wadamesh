@@ -45,6 +45,21 @@
   #define CAP_OTA          0   // AppFS app — updated via launcher, no spare slot
   #define CAP_LOCK_SCREEN  1
 
+#elif defined(HAS_THINKNODE_M9)         // ===== Heltec ThinkNode M9 (ESP32-S3) =====
+  #define CAP_TOUCH        0   // no touchscreen — QWERTY keyboard + d-pad only
+  #define CAP_ROTATABLE    0   // fixed landscape panel
+  #define CAP_LARGE_SCREEN 0   // 240x320, same panel size as the T-Deck
+  // microSD: DISABLED until ported to SD_MMC. The Meshtastic boot log shows the
+  // M9's card on SD_MMC (SDMMC peripheral), NOT the shared SPI bus — and the
+  // "CS=36" from the earlier schematic reading is an octal-PSRAM pin (GPIO35-37
+  // are reserved on the S3R8; driving 36 wedges PSRAM). Real SDMMC pins needed
+  // from the Meshtastic variant.h — see M9_PORT.md.
+  #define CAP_SD           0
+  #define CAP_FILESYSTEM   1
+  #define CAP_GPS          1   // CC1167Q on UART
+  #define CAP_OTA          1   // 16 MB flash, dual A/B app slots (see partitions_tdeck_touch.csv)
+  #define CAP_LOCK_SCREEN  1
+
 #else                                    // ===== Heltec V4 TFT (default) =====
   #define CAP_TOUCH        1   // capacitive touch panel
   #define CAP_ROTATABLE    1   // user can flip portrait/landscape
@@ -57,15 +72,21 @@
 #endif
 
 // ---- Derived input capabilities ---------------------------------------------
-// Physical keyboard: T-Deck matrix OR Tanmatsu keypad.
-#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_TANMATSU)
+// Physical keyboard: T-Deck matrix OR Tanmatsu keypad OR ThinkNode M9 keyboard.
+#if defined(HAS_TDECK_KEYBOARD) || defined(HAS_TANMATSU) || defined(HAS_M9_KEYBOARD)
   #define CAP_KEYBOARD 1
 #else
   #define CAP_KEYBOARD 0
 #endif
 
-// Focus-group D-pad navigation (no pointer): Tanmatsu keypad OR T-Deck trackball.
-#if defined(HAS_TANMATSU) || defined(HAS_TDECK_TRACKBALL)
+// Focus-group D-pad navigation (no pointer): Tanmatsu keypad OR T-Deck trackball
+// OR the ThinkNode M9's d-pad. The underlying machinery (navFifo, navMoveDir,
+// the focus group, the secondary KEYPAD indev) is generic — only the *pump*
+// that feeds it differs per board: Tanmatsu's navPump() reads bsp-input events;
+// T-Deck's WASDZ-letter nav and the M9's raw d-pad bytes are both fed straight
+// from handleHwKey() instead (see UITask.cpp's `#elif defined(HAS_M9_KEYBOARD)`
+// block, parallel to the T-Deck's `#if CAP_TRACKBALL` block).
+#if defined(HAS_TANMATSU) || defined(HAS_TDECK_TRACKBALL) || defined(HAS_THINKNODE_M9)
   #define CAP_KEYPAD_NAV 1
 #else
   #define CAP_KEYPAD_NAV 0
