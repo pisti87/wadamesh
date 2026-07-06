@@ -61,6 +61,9 @@
     #define PIN_SD_CS 39      // T-Deck microSD chip-select (M9 sets its own via build flags)
   #endif
 #endif
+#if defined(HAS_THINKNODE_M9)
+  extern void m9SetBacklight(bool on);
+#endif
 #if defined(HAS_TDECK_GT911)
   #include <driver/i2s.h>     // T-Deck MAX98357A speaker amp (notification tones)
   // T-Deck I2S audio amp pins (MAX98357A, no MCLK). Overridable via build flags.
@@ -36610,6 +36613,11 @@ static inline void touchScreenBacklight(bool on) {
   // but the panel never actually went dark (this branch used to be the (void)on no-op).
   if (on) applyBrightness(s_brightness_pct);
   else    bsp_display_set_backlight_brightness(0);
+#elif defined(HAS_THINKNODE_M9)
+  // M9's backlight is a simple ref-counted GPIO (GPIO17, active-LOW PNP) — no PWM dimming,
+  // just on/off. Goes through m9SetBacklight() (target.cpp) rather than a raw digitalWrite
+  // so it stays in sync with the ref-count M9Board::begin() already holds a claim on at boot.
+  m9SetBacklight(on);
 #else
   (void)on;
 #endif
