@@ -17,19 +17,19 @@
           "role": "gui",
           "title": "Touch UI",
           "version": {
-            "beta_33": {
-              "notes": "The freezes with MQTT enabled are gone. Connecting to the broker (DNS lookup, TCP connect, login) could block the device for 2-10 seconds and retried every 15 seconds while the broker was unreachable, all on the UI thread. Connection attempts now run fully in the background, and writes to a broker that stops responding are skipped instead of waited on (the same treatment beta_32 gave phone/web connections). Tip: if your bridge keeps reconnecting, check the broker address and credentials - a healthy connection does not retry.\nThe About page caused a ~0.4 second hitch every second while it was open: computing the firmware image size checksums the whole ~3 MB app in flash and ran twice per refresh. It is now computed once per boot, so About (and its stall list) no longer disturbs the very measurements it shows.\nFavoriting a contact when the favorites list is full (16) now says \"Favorites full (max 16)\" instead of the incorrect \"Removed from favorites\".",
+            "beta_35": {
+              "notes": "Heltec V4: multi-second freezes right after receiving messages are gone, including the screen refusing to wake from dark mode. Saving chat history to the internal flash could stall the device for up to 6 seconds (the V4 has no SD card, and internal flash pauses for housekeeping); that save now runs on a background task, so the screen and touch stay responsive no matter what storage is doing.\nTurning Bluetooth on while Wi-Fi is running no longer reboots the device when memory is tight: the switch now checks free memory first and tells you \"Not enough free memory for Bluetooth. Turn Wi-Fi off first.\" instead of crashing.\nThe same protection applies the other way around: turning Wi-Fi on with Bluetooth active used to claim \"Wi-Fi on\" while the radio silently never started. It now either really starts or tells you why it cannot.\nSettings could vanish for a single boot after an unlucky reboot (the device came up with a default name once, then recovered). Settings writes are now crash-safe: a reboot or power cut at any moment leaves at least one intact copy on storage, the loader self-heals from it, and a failed save now says \"Couldn't save the name to storage\" instead of pretending it worked.\nAbout 30 KB of the ESP32's scarce internal RAM has been freed by moving buffers to the external PSRAM and dropping unused USB components from the build. This is the headroom that makes Wi-Fi and Bluetooth run together comfortably again, especially on the Heltec V4.",
               "files": [
                 {
                   "type": "flash-wipe",
                   "name": "wadamesh-heltec-v4-tft-merged.bin",
-                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_33/wadamesh-heltec-v4-tft-merged.bin",
+                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_35/wadamesh-heltec-v4-tft-merged.bin",
                   "title": "Full install (bootloader + firmware)"
                 },
                 {
                   "type": "flash-update",
                   "name": "wadamesh-heltec-v4-tft.bin",
-                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_33/wadamesh-heltec-v4-tft.bin",
+                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_35/wadamesh-heltec-v4-tft.bin",
                   "title": "Update (app only)"
                 }
               ]
@@ -49,19 +49,19 @@
           "role": "gui",
           "title": "Touch UI",
           "version": {
-            "beta_33": {
-              "notes": "The freezes with MQTT enabled are gone. Connecting to the broker (DNS lookup, TCP connect, login) could block the device for 2-10 seconds and retried every 15 seconds while the broker was unreachable, all on the UI thread. Connection attempts now run fully in the background, and writes to a broker that stops responding are skipped instead of waited on (the same treatment beta_32 gave phone/web connections). Tip: if your bridge keeps reconnecting, check the broker address and credentials - a healthy connection does not retry.\nThe About page caused a ~0.4 second hitch every second while it was open: computing the firmware image size checksums the whole ~3 MB app in flash and ran twice per refresh. It is now computed once per boot, so About (and its stall list) no longer disturbs the very measurements it shows.\nFavoriting a contact when the favorites list is full (16) now says \"Favorites full (max 16)\" instead of the incorrect \"Removed from favorites\".",
+            "beta_35": {
+              "notes": "Heltec V4: multi-second freezes right after receiving messages are gone, including the screen refusing to wake from dark mode. Saving chat history to the internal flash could stall the device for up to 6 seconds (the V4 has no SD card, and internal flash pauses for housekeeping); that save now runs on a background task, so the screen and touch stay responsive no matter what storage is doing.\nTurning Bluetooth on while Wi-Fi is running no longer reboots the device when memory is tight: the switch now checks free memory first and tells you \"Not enough free memory for Bluetooth. Turn Wi-Fi off first.\" instead of crashing.\nThe same protection applies the other way around: turning Wi-Fi on with Bluetooth active used to claim \"Wi-Fi on\" while the radio silently never started. It now either really starts or tells you why it cannot.\nSettings could vanish for a single boot after an unlucky reboot (the device came up with a default name once, then recovered). Settings writes are now crash-safe: a reboot or power cut at any moment leaves at least one intact copy on storage, the loader self-heals from it, and a failed save now says \"Couldn't save the name to storage\" instead of pretending it worked.\nAbout 30 KB of the ESP32's scarce internal RAM has been freed by moving buffers to the external PSRAM and dropping unused USB components from the build. This is the headroom that makes Wi-Fi and Bluetooth run together comfortably again, especially on the Heltec V4.",
               "files": [
                 {
                   "type": "flash-wipe",
                   "name": "wadamesh-tdeck-merged.bin",
-                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_33/wadamesh-tdeck-merged.bin",
+                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_35/wadamesh-tdeck-merged.bin",
                   "title": "Full install (bootloader + firmware)"
                 },
                 {
                   "type": "flash-update",
                   "name": "wadamesh-tdeck.bin",
-                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_33/wadamesh-tdeck.bin",
+                  "url": "https://firmware.wadamesh.com/releases/TOUCH/beta_35/wadamesh-tdeck.bin",
                   "title": "Update (app only)"
                 }
               ]
