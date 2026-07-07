@@ -28035,13 +28035,18 @@ static bool m9HandleNavKey(int key) {
   if (!s_kbd_nav) return false;
   switch (key) {
     case M9_KEY_ENTER:
-      if (navOnTabBar()) navSwitchTab(+1); else navPushTap(LV_KEY_ENTER);
+      if (navOnTabBar()) {
+        navSwitchTab(+1);
+      } else {
+        navMarkEntered(lv_group_get_focused(s_nav_group));
+        navPushTap(LV_KEY_ENTER);
+      }
       s_nav_show = true; if (g_lv.task) g_lv.task->noteUserInput(); return true;
-    case M9_KEY_HW_BACK:
-      if (anyPopupOpen())                            hwKeyDismissTopPopup();
-      else if (LvChatPanel* cp = navOpenChatPanel()) closeChatPanel(cp);
-      else                                           navPushTap(LV_KEY_ESC);
+    case M9_KEY_ENTER_LONG: {
+      lv_obj_t* foc = s_nav_group ? lv_group_get_focused(s_nav_group) : nullptr;
+      if (foc && lv_obj_is_valid(foc)) lv_event_send(foc, LV_EVENT_LONG_PRESSED, nullptr);
       s_nav_show = true; if (g_lv.task) g_lv.task->noteUserInput(); return true;
+    }
     case M9_KEY_HOME:
       if (s_setup_root) return true;
       if (getActiveTab() == HOME_TAB_INDEX) {
