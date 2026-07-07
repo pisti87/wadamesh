@@ -28030,13 +28030,13 @@ static bool m9HandleNavKey(int key) {
       s_nav_show = true; if (g_lv.task) g_lv.task->noteUserInput(); return true;
     case M9_KEY_HOME:
       if (s_setup_root) return true;
-      // Close everything on top first (same idiom navGoToMainTab() already uses), THEN still
-      // check whether we need to jump tabs — dismissing a popup isn't a reason to stop early;
-      // Settings > Auto-add (reached via the Settings TAB, not the Home-tab drawer) needs both
-      // steps: close the overlay, then actually jump back to Home.
-      for (int i = 0; i < 8 && anyPopupOpen(); i++) hwKeyDismissTopPopup();
-      if (getActiveTab() == HOME_TAB_INDEX) setHomeDrawer(!s_home_drawer_mode);
-      else                                  navGoToMainTab(HOME_TAB_INDEX);
+      if (getActiveTab() == HOME_TAB_INDEX) {
+        const bool was_open = s_home_drawer_mode;          // read BEFORE dismissing anything
+        for (int i = 0; i < 8 && anyPopupOpen(); i++) hwKeyDismissTopPopup();   // still closes anything else on top (registry untouched, Back/etc. keep working)
+        setHomeDrawer(!was_open);                            // decide from the snapshot, not the now-mutated flag
+      } else {
+        navGoToMainTab(HOME_TAB_INDEX);
+      }
       s_nav_show = true; if (g_lv.task) g_lv.task->noteUserInput(); return true;
       if (getActiveTab() == HOME_TAB_INDEX) setHomeDrawer(!s_home_drawer_mode);
       else                                  navGoToMainTab(HOME_TAB_INDEX);
