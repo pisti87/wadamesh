@@ -9002,6 +9002,8 @@ static void lockOnScreenOffToggleCb(lv_event_t* e) {
   s_lock_on_screen_off = on;
 #if defined(HAS_TDECK_GT911)
   const char* unlock_hint = on ? TR("Locks when screen off\n(hold the trackball to unlock)") : TR("Screen-off just dims");
+#elif defined(HAS_THINKNODE_M9)
+  const char* unlock_hint = on ? TR("Locks when screen off\n(hold the d-pad to unlock)") : TR("Screen-off just dims");
 #elif defined(HAS_TANMATSU)
   const char* unlock_hint = on ? TR("Locks when screen off\n(press Volume Down to unlock)") : TR("Screen-off just dims");
 #else
@@ -27163,6 +27165,8 @@ static void lockscreenShow() {
   lv_obj_t* hint = lv_label_create(s_lock_root);
 #if defined(HAS_TANMATSU)
   lv_label_set_text(hint, TR("press Volume Down to unlock"));
+#elif defined(HAS_THINKNODE_M9)
+  lv_label_set_text(hint, TR("hole the d-pad to unlock"));
 #else
   lv_label_set_text(hint, TR("hold the trackball to unlock"));
 #endif
@@ -28115,7 +28119,18 @@ static bool m9HandleArrowKey(int key, lv_obj_t* ta) {
 // settings mirror textarea. No field open -> the key is ignored.
 static void handleHwKey(int key) {
   if (!g_lv.keyboard) return;
-  if (g_lv.task && g_lv.task->isManualLock()) { g_lv.task->lockscreenReveal(); return; }
+if (g_lv.task && g_lv.task->isManualLock()) {
+#if defined(HAS_M9_KEYBOARD)
+    // M9 has no trackball to hold — the keyboard controller's own long-press
+    // detection (M9_KEY_ENTER_LONG, a distinct byte from a normal Enter tap)
+    // stands in for "hold to unlock." No progressive countdown UI is possible
+    // this way (we only get a single discrete "that was a long press" event,
+    // not continuous press-state to poll), but it's a working equivalent.
+    if (key == M9_KEY_ENTER_LONG) { g_lv.task->unlockScreen(); return; }
+#endif
+    g_lv.task->lockscreenReveal();
+    return;
+  }
 #if defined(HAS_M9_KEYBOARD)
   // M9 has no touch to wake the screen the way T-Deck/Heltec V4 do — mirror Tanmatsu's
   // navPump() pattern: any key wakes it (noteUserInput() wakes internally when the screen
@@ -36731,14 +36746,17 @@ void UITask::lockScreen() {
 }
 
 void UITask::lockscreenReveal() {
-#if defined(HAS_TDECK_GT911)
-  if (!_manual_lock) return;                 // only meaningful while hard-locked
+#if CAP_LOCK_SCREEN
+  if (!_manual_lock) return;
   if (_screen_off) {
+    lockscreenShow();               // build + foreground FIRST
+    lv_refr_now(nullptr);           // force it to actually paint before the backlight comes on
     setCpuForScreen(true); touchScreenBacklight(true); _screen_off = false;
-    _lock_lit_ms = millis();                 // re-arm the burn-in timer ONLY on a real off->lit reveal,
-  }                                          // so a held / ghost touch can't keep the panel lit forever
-  lockscreenShow();                          // ensure built + on top
-  _last_input_ms = millis();                 // restart the re-dim timer
+    _lock_lit_ms = millis();
+  } else {
+    lockscreenShow();                // already lit: just re-foreground (idempotent, cheap)
+  }
+  _last_input_ms = millis();
 #endif
 }
 
