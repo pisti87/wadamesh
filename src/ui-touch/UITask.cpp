@@ -364,6 +364,15 @@ extern "C" const lv_font_t sleepicons_font;
 extern "C" const lv_font_t extras_12;
 extern "C" const lv_font_t extras_14;
 extern "C" const lv_font_t extras_16;
+#if defined(HAS_TANMATSU)
+// Compressed Latin-accent fonts at the scaled sizes so umlauts etc. match their
+// neighbours at Large/Huge UI scale (issue #129). Room for these was made by
+// storing the extras fonts compressed (LV_USE_FONT_COMPRESSED) — nothing lost,
+// net binary SMALLER, so the P4 app-load ceiling is respected.
+extern "C" const lv_font_t extras_lat_20;
+extern "C" const lv_font_t extras_lat_24;
+extern "C" const lv_font_t extras_lat_28;
+#endif
 static lv_font_t g_font_12;
 static lv_font_t g_font_14;
 static lv_font_t g_font_16;
@@ -429,6 +438,22 @@ static void initTouchFontFallbacks() {
   //   (Cyrillic/Greek/Arabic). The emoji font returns false for non-emoji
   //   codepoints, so they fall straight through to the size-matched extras.
   const lv_font_t* extras[3] = { &extras_12, &extras_14, &extras_16 };
+#if defined(HAS_TANMATSU)
+  // At Large/Huge scale the primaries become Montserrat 20/24/28 (ASCII-only),
+  // so accents dropped to the 16 px fallback and looked tiny. Splice the
+  // size-matched Latin-accent font per slot; tail is extras_16 so non-Latin
+  // still resolves. g_font sizes: Large(140) 16/20/24, Huge(170) 20/24/28.
+  static lv_font_t s_acc_scaled[3];
+  const lv_font_t* acc[3] = { nullptr, nullptr, nullptr };
+  if (s_ui_fscale == 140)      { acc[1] = &extras_lat_20; acc[2] = &extras_lat_24; }
+  else if (s_ui_fscale == 170) { acc[0] = &extras_lat_20; acc[1] = &extras_lat_24; acc[2] = &extras_lat_28; }
+  for (int i = 0; i < 3; ++i) {
+    if (!acc[i]) continue;
+    s_acc_scaled[i] = *acc[i];
+    s_acc_scaled[i].fallback = &extras_16;
+    extras[i] = &s_acc_scaled[i];
+  }
+#endif
   lv_font_t*       prim[3]   = { &g_font_12, &g_font_14, &g_font_16 };
   for (int i = 0; i < 3; ++i) {
     s_emoji_font[i] = lv_imgfont_create(16, emojiImgfontPathCb);   // 16 px baked glyphs (~15% larger; sit on the text baseline)
@@ -2720,6 +2745,16 @@ static lv_obj_t* navOpenDropdown() {
 }
 
 #if defined(HAS_TANMATSU)   // bsp-input driven; on the T-Deck navFifo is fed from the trackball instead
+// ALT-accent picker (issue #129) — functions defined with the accent machinery
+// further down (they reuse the accent popup + kAccentSets); called from navPump.
+// State lives HERE so navPump can consult it: while a pick is open the focused-
+// textarea lookup can come back null (focus wanders when overlays appear), so
+// the hook falls back to s_altacc_ta instead of dropping the cycle keypress.
+static bool      s_altacc_active = false;
+static char      s_altacc_key    = 0;         // letter driving the open picker
+static lv_obj_t* s_altacc_ta     = nullptr;   // field the pick inserts into
+static bool tanAltAccentHandleKey(char c, lv_obj_t* ta);
+static void tanAltAccentAltReleased();
 // The UP/DOWN/LEFT/RIGHT action, factored out so a HELD arrow can auto-repeat it (navPump's
 // per-frame tick re-fires this). Recomputes the focused field each call so repeat stays correct.
 static void navArrowAction(uint32_t key) {
@@ -2794,6 +2829,16 @@ static void navPump() {
     // button — alongside every real NAVIGATION/KEYBOARD key. The app only consumes navigation +
     // keyboard; the duplicate scancode was hitting noteUserInput() and re-waking the screen the
     // instant a Vol- press slept it. Drop everything that isn't navigation/keyboard.
+    // Scancode events are otherwise unused — the ONE we care about is the ALT
+    // key's own release, which commits an open ALT-accent pick (issue #129).
+    if (ev.type == INPUT_EVENT_TYPE_SCANCODE) {
+      const uint32_t sc   = (uint32_t)ev.args_scancode.scancode;
+      const uint32_t code = sc & ~(uint32_t)BSP_INPUT_SCANCODE_RELEASE_MODIFIER;
+      const bool released = (sc & BSP_INPUT_SCANCODE_RELEASE_MODIFIER) != 0;
+      if (released && (code == BSP_INPUT_SCANCODE_LEFTALT || code == BSP_INPUT_SCANCODE_ESCAPED_RALT))
+        tanAltAccentAltReleased();
+      continue;
+    }
     if (ev.type != INPUT_EVENT_TYPE_NAVIGATION && ev.type != INPUT_EVENT_TYPE_KEYBOARD) continue;
     if (ev.type == INPUT_EVENT_TYPE_NAVIGATION && ev.args_navigation.key == BSP_INPUT_NAVIGATION_KEY_VOLUME_DOWN) {
       // The button emits a noisy burst per press; act ONCE per burst — on a "fresh" event (>=450 ms
@@ -2966,6 +3011,14 @@ static void navPump() {
       char c = ev.args_keyboard.ascii;
       if (s_nav_debug) printf("[NAV] kbd ascii=%d '%c' ta=%d\n", (int)(uint8_t)c, (c >= 32 && c < 127) ? c : '?', ta ? 1 : 0);
       if (s_navkey_capture >= 0) { navKeyCaptureApply((uint8_t)c); continue; }   // Settings remap: this key is the new binding
+      // ALT + letter over a text field = accent picker (issue #129): opens the
+      // accent popup, the letter cycles the highlight while ALT stays down,
+      // releasing ALT (scancode handler above) inserts the highlighted variant.
+      if ((ev.args_keyboard.modifiers & BSP_INPUT_MODIFIER_ALT) && (uint8_t)c >= 32 &&
+          (ta || ta_focused || s_altacc_active)) {
+        if (!ta && ta_focused) { s_nav_ta_editing = true; ta = ta_focused; }   // start editing, like plain typing does
+        if (tanAltAccentHandleKey(c, ta ? ta : s_altacc_ta)) continue;         // fall back to the pick's own field
+      }
       if (ta) {                               // type straight into the focused field
         if (c == 8 || c == 127) {
           // Backspace in an EMPTY field = leave edit mode (matches Enter-on-empty below;
@@ -2980,7 +3033,25 @@ static void navPump() {
             s_nav_ta_editing = false;
           else navPushTap(LV_KEY_NEXT);
         }
-        else if ((uint8_t)c >= 32)       lv_textarea_add_char(ta, (uint32_t)(uint8_t)c);
+        else if ((uint8_t)c >= 32) {
+          // Double-tap SPACE within 250 ms switches to the configured secondary
+          // keyboard language — the same shortcut the T-Deck's physical keyboard
+          // has in handleHwKey, which Tanmatsu typing bypasses (it types here).
+          static unsigned long s_tan_space_ms = 0;
+          bool cycled = false;
+          if (c == ' ') {
+            unsigned long snow = millis();
+            if ((snow - s_tan_space_ms) < 250 && keyboardLayoutsAnySecondary()) {
+              lv_textarea_del_char(ta);                       // remove the first space
+              KeyboardLayoutId next = keyboardLayoutsCycle(g_lv.keyboard);
+              touchPrefsSetKeyboardLayout(static_cast<uint8_t>(next));
+              if (g_lv.task) g_lv.task->showAlert(keyboardLayoutName(next), 800);
+              cycled = true;
+            }
+            s_tan_space_ms = snow;
+          }
+          if (!cycled) lv_textarea_add_char(ta, (uint32_t)(uint8_t)c);
+        }
 #if defined(HAS_TANMATSU)
       } else if (ta_focused && (uint8_t)c >= 32) {
         // Tanmatsu: a printable keypress on a focused (not-yet-editing) field starts editing AND types
@@ -4740,9 +4811,16 @@ static void accentCommitTimerCb(lv_timer_t* t) { (void)t; accentExit(); }
 
 static void accentPopupShow() {
   accentPopupHide();
-  const int cw = 30, ch = 30, gap = 4, pad = 6;
+  // SC() so the box matches the scaled UI on the Tanmatsu (no-op at scale 100).
+  const int cw = SC(30), ch = SC(30), gap = SC(4), pad = SC(6);
   s_acc_popup = lv_obj_create(lv_layer_top());
   lv_obj_remove_style_all(s_acc_popup);
+  // Passive display only — never a keyboard-nav focus target and never
+  // clickable. Without this the nav collector steals focus onto the popup,
+  // the focused-textarea lookup goes null and the ALT-accent cycle key stops
+  // reaching its handler (issue #129 first test).
+  lv_obj_add_flag(s_acc_popup, NAV_SKIP_FLAG);
+  lv_obj_clear_flag(s_acc_popup, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_set_style_bg_color(s_acc_popup, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(s_acc_popup, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_radius(s_acc_popup, 8, LV_PART_MAIN);
@@ -4756,6 +4834,8 @@ static void accentPopupShow() {
   for (int i = 0; i < s_acc_n; ++i) {
     lv_obj_t* c = lv_obj_create(s_acc_popup);
     lv_obj_remove_style_all(c);
+    lv_obj_add_flag(c, NAV_SKIP_FLAG);
+    lv_obj_clear_flag(c, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(c, cw, ch);
     lv_obj_set_style_radius(c, 5, LV_PART_MAIN);
     lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
@@ -4829,6 +4909,65 @@ static void accentHandleValueChanged() {
   if (s_acc_timer) lv_timer_reset(s_acc_timer);
 }
 // ===========================================================================
+
+#if defined(HAS_TANMATSU)
+// ---- ALT-accent picker for the physical keyboard (issue #129) -------------
+// The Tanmatsu has no touch and no on-screen keyboard, so the tap-to-pick
+// accent box is unreachable — umlauts and accents had NO input path at all.
+// Flow: hold ALT and press a letter with accent variants -> the accent popup
+// opens over the field with the first VARIANT highlighted (ALT+letter means
+// "I want the accented one", so the plain letter is the LAST option, not the
+// first); pressing the letter again while ALT stays down cycles the highlight
+// (key auto-repeat cycles too, so holding the letter walks the options);
+// releasing ALT — its own scancode event, handled at the top of navPump —
+// inserts the highlighted choice and closes the popup. Works with shift for
+// uppercase variants, in every language (kAccentSets is per-letter).
+// (State variables live next to the forward declarations above navPump.)
+static bool tanAltAccentHandleKey(char c, lv_obj_t* ta) {
+  if (!ta || (uint8_t)c < 32) return false;
+  const char keystr[2] = { c, 0 };
+  const AccentSet* set = accentLookup(keystr);
+  if (!set) return s_altacc_active;   // no variants: swallow strays mid-pick, else let it type
+  if (s_altacc_active && s_altacc_key == c && s_acc_popup) {
+    s_acc_idx = (s_acc_idx + 1) % s_acc_n;     // same letter again: cycle the highlight
+    accentPopupHighlight();
+    return true;
+  }
+  // First ALT+letter (or the letter changed mid-hold): (re)build the options.
+  s_acc_n = 0;
+  for (uint8_t i = 0; i < set->n && s_acc_n < 11; ++i) s_acc_opts[s_acc_n++] = set->v[i];
+  strncpy(s_acc_base, keystr, sizeof(s_acc_base) - 1);
+  s_acc_base[sizeof(s_acc_base) - 1] = 0;
+  s_acc_opts[s_acc_n++] = s_acc_base;          // plain letter last (escape hatch)
+  s_acc_idx = 0;
+  s_altacc_active = true;
+  s_altacc_key    = c;
+  s_altacc_ta     = ta;
+  accentPopupShow();
+  // accentPopupShow anchors to the on-screen keyboard, which this board doesn't
+  // have — re-anchor just above the field being edited (below it if cramped),
+  // centred via align (manual x math misplaced it under the scaled UI).
+  if (s_acc_popup) {
+    lv_obj_update_layout(s_acc_popup);
+    lv_area_t a; lv_obj_get_coords(ta, &a);
+    lv_coord_t by = a.y1 - lv_obj_get_height(s_acc_popup) - SC(4);
+    if (by < STATUSBAR_H + 2) by = a.y2 + SC(4);
+    lv_obj_align(s_acc_popup, LV_ALIGN_TOP_MID, 0, by);
+  }
+  return true;
+}
+
+static void tanAltAccentAltReleased() {
+  if (!s_altacc_active) return;
+  lv_obj_t* ta = s_altacc_ta;
+  if (ta && lv_obj_is_valid(ta) && s_acc_idx >= 0 && s_acc_idx < s_acc_n)
+    lv_textarea_add_text(ta, s_acc_opts[s_acc_idx]);
+  accentPopupHide();
+  s_altacc_active = false;
+  s_altacc_key    = 0;
+  s_altacc_ta     = nullptr;
+}
+#endif  // HAS_TANMATSU ALT-accent picker
 
 // ---- "Alt" accent key (issue #22) ----------------------------------------
 // The touch keyboard can't do long-press (the cap-touch driver finalizes taps
@@ -28223,6 +28362,12 @@ static void handleHwKey(int key) {
   if (g_lv.task && g_lv.task->isManualLock()) { g_lv.task->lockscreenReveal(); return; }
   // Idle-dimmed (not hard-locked): ignore keys; a touch/click wakes into the UI.
   if (g_lv.task && g_lv.task->isScreenOff()) return;
+#if defined(HAS_TDECK_KEYBOARD) && defined(TDECK_KEYCODE_PROBE)
+  // TEMP bring-up probe: toast the raw byte of every key so we can see what the
+  // physical alt / mic / sym keys emit. Remove once the alt-accent key is wired.
+  { char _pb[28]; snprintf(_pb, sizeof _pb, "key 0x%02X '%c'", key & 0xFF,
+      (key >= 32 && key < 127) ? (char)key : '.'); if (g_lv.task) g_lv.task->showAlert(_pb, 1400); }
+#endif
 #if CAP_TRACKBALL
   // Remapping a tab hotkey (Settings → Keyboard): capture the next key press.
   if (s_navkey_capture >= 0) { navKeyCaptureApply(key); return; }

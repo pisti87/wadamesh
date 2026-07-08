@@ -686,9 +686,13 @@ const char* keyboardLayoutName(KeyboardLayoutId id) {
 }
 
 void keyboardLayoutsApply(lv_obj_t* keyboard, KeyboardLayoutId id) {
-    if (!keyboard) return;
     if (static_cast<uint8_t>(id) >= KEYBOARD_LAYOUT_COUNT) id = KeyboardLayoutId::EN;
+    // Track the active layout even with NO on-screen keyboard to re-map — the
+    // Tanmatsu cycles layouts via double-space with keyboard == nullptr, and
+    // the early return here used to skip the state change, making the cycle a
+    // permanent no-op on that board.
     s_current_layout = id;
+    if (!keyboard) return;
 
   const OsKeyboardLayout& lo = k_os_layouts[static_cast<int>(id)];
   lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER, const_cast<const char**>(lo.lower_map), lo.lower_ctrl);   // maps now in flash; LVGL never writes them

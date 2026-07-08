@@ -108,6 +108,7 @@
  * render full-colour emoji inline with text. The emoji set is pre-baked to
  * RGB565+alpha lv_img_dsc_t C-arrays (emoji_data.c) and wired as the tail of the
  * font fallback chain in UITask (montserrat -> extras -> emoji). */
+#define LV_USE_FONT_COMPRESSED 1   /* decode RLE-compressed extras/accent fonts (Tanmatsu size budget) */
 #define LV_USE_IMGFONT 1
 
 /* Bi-directional text + Arabic/Persian contextual shaping. Lets Arabic (and
