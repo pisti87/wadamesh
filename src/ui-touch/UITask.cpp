@@ -14780,13 +14780,13 @@ static void calibrateBatteryCb(lv_event_t* e) {
 // SPIFFS (flat) uses a top-level path.
 static fs::FS& battLogFs() {
 #if CAP_SD
-  if (SD.cardType() != CARD_NONE) return SD;
+  if (SD.cardType() != CARD_NONE && SD.exists("/meshcomod")) return SD;
 #endif
   return SPIFFS;
 }
 static bool battLogOnSd() {
 #if CAP_SD
-  return SD.cardType() != CARD_NONE;
+  return SD.cardType() != CARD_NONE && SD.exists("/meshcomod");
 #else
   return false;
 #endif
