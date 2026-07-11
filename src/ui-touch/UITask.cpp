@@ -2162,7 +2162,15 @@ static void drawRemotePlaceholder(bool exit_armed = false) {
     display.drawTextCentered(W / 2, y, "Connecting to Wi-Fi...");
   }
   display.setColor(exit_armed ? DisplayDriver::GREEN : DisplayDriver::LIGHT);
-  display.drawTextCentered(W / 2, H - 16, exit_armed ? "Press SPACE again to exit" : "Press SPACE twice to exit");
+#if CAP_KEYBOARD
+  display.drawTextCentered(W / 2, H - 30, exit_armed ? "Press SPACE again to exit" : "Press SPACE twice to exit");
+#elif CAP_TOUCH
+  display.drawTextCentered(W / 2, H - 30, exit_armed ? "Keep holding to exit..." : "Touch and hold to exit");
+#else
+  display.drawTextCentered(W / 2, H - 30, "Open the web page to exit");
+#endif
+  display.setColor(DisplayDriver::LIGHT);
+  display.drawTextCentered(W / 2, H - 14, "or tap Exit in the browser");
   display.endFrame();
   s_remote_ph_ip = up ? (uint32_t)WiFi.localIP() : 0;
 }
@@ -2180,6 +2188,29 @@ static void remotePhysicalKey(int key) {
     drawRemotePlaceholder(true);
   }
 }
+
+#if CAP_TOUCH
+// Keyboard-less touch boards (Heltec V4, RAK Tap) have no SPACE key to exit remote mode,
+// so a 3 s touch-and-hold on the physical panel leaves it. The touch poll runs even in
+// remote mode (the LVGL indev is skipped but the driver still polls), so the live-touch
+// state is available here. Called each loop from the remote block.
+static uint32_t s_remote_touch_start = 0;
+static void remoteTouchTick() {
+  uint16_t tx, ty;
+  const bool pressed = heltecV4CapTouchGetLive(&tx, &ty);
+  const uint32_t nowm = millis();
+  if (pressed) {
+    if (!s_remote_touch_start) { s_remote_touch_start = nowm; drawRemotePlaceholder(true); }   // "Keep holding..."
+    else if (nowm - s_remote_touch_start >= 3000) {                                            // held long enough -> leave
+      touchPrefsSetRemoteMode(false);
+      if (g_lv.task) g_lv.task->rebootDevice();
+    }
+  } else if (s_remote_touch_start) {
+    s_remote_touch_start = 0;
+    drawRemotePlaceholder(false);   // lifted before 3 s -> revert the hint
+  }
+}
+#endif
 #endif
 
 #if !defined(HAS_TANMATSU)
@@ -38277,8 +38308,12 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     // scales with pixel count, so fewer pixels = proportionally faster — ~44% less than
     // 640x384. The browser bilinear-upscales the canvas (near-free on the GPU) at the cost of
     // some softness. Orientation toggles live via the Rotate button ([0x04] + s_remote_landscape).
-    g_lv.disp_drv.hor_res  = s_remote_mode ? (s_remote_landscape ? 480 : 288) : (ui_landscape ? 320 : 240);
-    g_lv.disp_drv.ver_res  = s_remote_mode ? (s_remote_landscape ? 288 : 480) : (ui_landscape ? 240 : 320);
+    // 400x240 (was 480x288): keeps the whole mirror footprint (~514 KB) BELOW the VNC
+    // footprint that already allocates on the 2 MB-PSRAM Heltec V4 (~616 KB), so remote is
+    // guaranteed to fit anywhere VNC does instead of black-screening on a failed alloc. Also
+    // faster (fewer pixels). Upscaled in the browser.
+    g_lv.disp_drv.hor_res  = s_remote_mode ? (s_remote_landscape ? 400 : 240) : (ui_landscape ? 320 : 240);
+    g_lv.disp_drv.ver_res  = s_remote_mode ? (s_remote_landscape ? 240 : 400) : (ui_landscape ? 240 : 320);
 #endif
     g_lv.disp_drv.flush_cb = lvglFlush;
     g_lv.disp_drv.draw_buf = &g_lv.draw_buf;
@@ -38361,15 +38396,22 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
       g_lv.indev_drv.disp    = lv_disp_get_default();
       if (!lv_indev_drv_register(&g_lv.indev_drv)) pushDiagLine("LVGL indev failed");
     }
-    // Web UI mirror: stream this display + accept a phone browser's taps as a
-    // second pointer indev (opt-in via the VNC/REMOTE apps; see WebMirror / the WS
-    // server). Remote mode always streams + wants a bigger ring for the 480x800 frame.
-    g_web_mirror.begin(s_remote_mode ? (size_t)(1024 * 1024) : (size_t)0);
-    g_web_mirror.setScreenSize(lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
-    g_web_mirror.setEnabled(s_remote_mode ? true : touchPrefsGetWebMirror());
-    g_web_mirror.setRemote(s_remote_mode);    // browser shows the Rotate button only in remote mode
+    // Web UI mirror: stream this display + accept a phone browser's taps as a second
+    // pointer indev (opt-in via the VNC/REMOTE apps; see WebMirror / the WS server).
+    // Size the remote ring to just above ONE frame (w*h*2 + 48 KB) instead of a fixed
+    // 1 MB: the old 1 MB ring failed to allocate on the 2 MB-PSRAM Heltec V4 (VNC's
+    // smaller default ring fit), leaving active()==false and a black browser. The ring
+    // only ever holds one dirty region at a time, so frame-sized is also functionally
+    // enough. begin() shrink-retries if even this is tight, so remote streams as long
+    // as one frame fits in PSRAM.
     s_web_fb_w = lv_disp_get_hor_res(NULL);   // shadow-buffer dimensions for the mirror
     s_web_fb_h = lv_disp_get_ver_res(NULL);
+    const size_t rmt_frame = (size_t)s_web_fb_w * s_web_fb_h * 2;
+    g_web_mirror.begin(s_remote_mode ? (rmt_frame + 48u * 1024u) : (size_t)0);
+    g_web_mirror.setScreenSize(s_web_fb_w, s_web_fb_h);
+    g_web_mirror.setEnabled(s_remote_mode ? true : touchPrefsGetWebMirror());
+    g_web_mirror.setRemote(s_remote_mode);    // browser shows the Rotate button only in remote mode
+    if (s_remote_mode) webMirrorEnsureBufs();   // pre-allocate the mirror shadow/band buffers up front
     lv_indev_drv_init(&s_web_indev_drv);
     s_web_indev_drv.type    = LV_INDEV_TYPE_POINTER;
     s_web_indev_drv.read_cb = webPointerRead;
@@ -39647,6 +39689,12 @@ void UITask::loop() {
       }
     }
     if (s_remote_exit_armed && (now - s_remote_exit_armed) >= 3000) { s_remote_exit_armed = 0; drawRemotePlaceholder(false); }
+    // Exit button on the web page -> leave remote mode (board-agnostic; the main way out
+    // for keyboard-less boards like the Heltec V4).
+    if (g_web_mirror.takeExit()) { touchPrefsSetRemoteMode(false); if (g_lv.task) g_lv.task->rebootDevice(); }
+#if CAP_TOUCH
+    remoteTouchTick();   // 3 s touch-and-hold on the panel also leaves remote (no SPACE key)
+#endif
     uint32_t rip = (WiFi.status() == WL_CONNECTED) ? (uint32_t)WiFi.localIP() : 0;
     if (rip != s_remote_ph_ip) drawRemotePlaceholder();
   }

@@ -42,6 +42,8 @@ static const char WS_HTTP_INFO_PAGE[] =
   "#kb:active{background:#19d6c2;color:#000;border-color:#19d6c2}\n"
   "#rot{margin-top:6px;padding:7px 15px;font-size:12px;background:#141416;color:#c8ccce;border:1px solid #2a2a2e;border-radius:8px;display:none}\n"
   "#rot:active{background:#19d6c2;color:#000;border-color:#19d6c2}\n"
+  "#xit{margin-top:6px;padding:7px 15px;font-size:12px;background:#1e1416;color:#e0a6a6;border:1px solid #4a2a2e;border-radius:8px;display:none}\n"
+  "#xit:active{background:#ff6b6b;color:#000;border-color:#ff6b6b}\n"
   "#k{position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;border:0;padding:0;font-size:16px}\n"
   "#hdr{position:fixed;top:14px;left:18px;display:none;align-items:center;gap:11px;z-index:5}\n"
   "#hdr .wm{font-family:'JetBrains Mono','Courier New',monospace;font-weight:700;font-size:22px;letter-spacing:2px;color:#e8e8ea}\n"
@@ -57,6 +59,7 @@ static const char WS_HTTP_INFO_PAGE[] =
   "<div id=s>connecting...</div>\n"
   "<button id=kb>&#9000; Keyboard</button>\n"
   "<button id=rot>&#8635; Rotate</button>\n"
+  "<button id=xit>&#10005; Exit remote</button>\n"
   "<textarea id=k autocomplete=off autocorrect=off autocapitalize=off spellcheck=false></textarea>\n"
   "</div>\n"
   "<script>\n"
@@ -64,7 +67,7 @@ static const char WS_HTTP_INFO_PAGE[] =
   "var OT=document.createElement('canvas'),OX=OT.getContext('2d');\n"
   "var DW=320,DH=240,down=false,last=0,ws;\n"
   "var isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0,kbT=null;\n"
-  "var ROT=document.getElementById('rot');\n"
+  "var ROT=document.getElementById('rot'),XIT=document.getElementById('xit');\n"
   "function st(t,k){S.textContent=t;S.className=k||''}\n"
   "function conn(){\n"
   " ws=new WebSocket((location.protocol=='https:'?'wss://':'ws://')+location.host+'/mirror');\n"
@@ -74,7 +77,7 @@ static const char WS_HTTP_INFO_PAGE[] =
   " ws.onerror=function(){st('connection error','err')};\n"
   " ws.onmessage=function(e){\n"
   "  var a=new Uint8Array(e.data);\n"
-  "  if(a[0]==2){DW=a[1]|(a[2]<<8);DH=a[3]|(a[4]<<8);if(C.width!=DW)C.width=DW;if(C.height!=DH)C.height=DH;ROT.style.display=(a.length>5&&(a[5]&1))?'':'none';fit();return}\n"
+  "  if(a[0]==2){DW=a[1]|(a[2]<<8);DH=a[3]|(a[4]<<8);if(C.width!=DW)C.width=DW;if(C.height!=DH)C.height=DH;var rem=(a.length>5&&(a[5]&1))?'':'none';ROT.style.display=rem;XIT.style.display=rem;fit();return}\n"
   "  if(a[0]==3){clearTimeout(kbT);if(a[1])K.focus();else K.blur();return}\n"
   "  if(a[0]==1){\n"
   "   var fl=a[1],x=a[2]|(a[3]<<8),y=a[4]|(a[5]<<8),w=a[6]|(a[7]<<8),h=a[8]|(a[9]<<8);\n"
@@ -103,6 +106,7 @@ static const char WS_HTTP_INFO_PAGE[] =
   "var K=document.getElementById('k');\n"
   "document.getElementById('kb').addEventListener('click',function(){K.value=' ';K.focus();try{K.setSelectionRange(1,1)}catch(x){}});\n"
   "ROT.addEventListener('click',function(){if(!ws||ws.readyState!=1)return;st('rotating - reconnecting','');ws.send(new Uint8Array([4,DW<DH?1:0]))});\n"
+  "XIT.addEventListener('click',function(){if(!ws||ws.readyState!=1)return;if(!confirm('Leave remote mode? The device reboots to its normal screen.'))return;st('leaving remote - rebooting','');ws.send(new Uint8Array([5]))});\n"
   "function skey(cp){if(!ws||ws.readyState!=1)return;ws.send(new Uint8Array([2,cp&255,(cp>>8)&255]))}\n"
   "K.addEventListener('beforeinput',function(e){var t=e.inputType;\n"
   " if(t=='insertText'&&e.data){for(var i=0;i<e.data.length;i++)skey(e.data.codePointAt(i));e.preventDefault()}\n"
@@ -695,6 +699,8 @@ void WebSocketCompanionServer::drainMirrorInput(int idx, WebMirror& m) {
               m.pushKey((uint16_t)(c->comp_rx_buf[1] | (c->comp_rx_buf[2] << 8)));
             } else if (ty == 0x04 && c->comp_rx_len >= 2) {   // orientation: [0x04, want_landscape]
               m.requestOrient(c->comp_rx_buf[1] ? 1 : 2);     // 1=landscape, 2=portrait; UI thread reboots into it
+            } else if (ty == 0x05) {                          // exit remote mode
+              m.requestExit();
             }
           } else if (c->ws_opcode == 0x08) {   // client close
             disconnectClient(idx);

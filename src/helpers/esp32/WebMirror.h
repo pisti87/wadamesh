@@ -26,6 +26,7 @@ public:
   void setScreenSize(int w, int h) { _scr_w = (uint16_t)w; _scr_h = (uint16_t)h; }
   uint16_t screenW() const { return _scr_w; }
   uint16_t screenH() const { return _scr_h; }
+  size_t   ringBytes() const { return _cap; }   // 0 = ring alloc failed (feature can't stream)
 
   // True only when we should capture/stream: opted in, ring ready, >=1 client.
   // The LVGL flush hook checks this first, so the feature costs one bool load
@@ -72,6 +73,11 @@ public:
   void requestOrient(uint8_t v) { _orient_req = v; }   // 1 = landscape, 2 = portrait, 0 = none
   uint8_t takeOrient() { uint8_t v = _orient_req; _orient_req = 0; return v; }
 
+  // ---- exit-remote request (browser -> device): the Exit button leaves remote mode.
+  //      Board-agnostic way out for keyboard-less boards (V4/RAK). ----
+  void requestExit() { _exit_req = true; }
+  bool takeExit() { bool v = _exit_req; _exit_req = false; return v; }
+
 private:
   uint8_t* _ring = nullptr;
   size_t   _cap  = 0;
@@ -91,6 +97,7 @@ private:
   volatile bool _kb_focused = false, _kb_dirty = false;   // editable-field focus signal
   volatile bool _remote = false;          // remote mode -> browser shows the Rotate button
   volatile uint8_t _orient_req = 0;       // browser-requested orientation (1=landscape, 2=portrait, 0=none)
+  volatile bool _exit_req = false;        // browser asked to leave remote mode
 };
 
 extern WebMirror g_web_mirror;
