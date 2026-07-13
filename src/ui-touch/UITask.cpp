@@ -34100,6 +34100,18 @@ static void docCaptureTour() {
   openMonitorPage();  docSettle(14); captureScreenToSerial("app_rfmonitor"); closeMonitorPage();  docSettle(6);
   openSpectrumPage(); docSettle(14); captureScreenToSerial("app_spectrum");  closeSpectrumPage(); docSettle(6);
   openRemotePage();   docSettle(14); captureScreenToSerial("app_remote");    closeRemotePage();   docSettle(6);
+#if defined(MULTI_TRANSPORT_COMPANION) && CAP_WEB_BROWSER
+  // On-device web browser (8 MB boards only) + the chat-link menu + the QR popup.
+  // The reader renders from the UI-update poll (which doesn't run while this tour
+  // blocks the loop), so drive the fetch-wait + render inline here.
+  openReaderPage(); readerStart("wadamesh.com");
+  { int _w = 0; while (s_reader_busy && _w < 700) { lv_timer_handler(); delay(22); ++_w; } esp_task_wdt_reset(); }
+  if (s_reader_ok) { readerRenderBody(); readerSetAddrExpanded(false); }
+  else             { readerShowMessage(s_reader_msg[0] ? s_reader_msg : "Couldn't load page", 0xE0A0A0); readerSetAddrExpanded(true); }
+  docSettle(8); captureScreenToSerial("app_web");       closeReaderPage(); docSettle(6);
+  openUrlMenu("https://wadamesh.com");            docSettle(10); captureScreenToSerial("app_web_links");  closeUrlMenu();    docSettle(6);
+  openUrlQrPopup("https://wadamesh.com");         docSettle(10); captureScreenToSerial("app_web_qr");     closeUrlQr();      docSettle(6);
+#endif
 
   Serial.print("\n<<<WMTOUR END>>>\n"); Serial.flush();
 }

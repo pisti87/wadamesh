@@ -132,6 +132,7 @@
     <div class="grp">With your phone</div>
     <a href="#companion">Companion mode</a>
     <a href="#remote">Remote &amp; web app</a>
+    <a href="#web">Web browser</a>
     <div class="grp">Reference</div>
     <a href="#updates">Updates &amp; test builds</a>
     <a href="#settings-pages">Settings pages</a>
@@ -300,6 +301,29 @@
         <figure class="phone"><img src="docs-img/web_discovered.png" alt="Discovered nodes in the web app"><figcaption>Discovered nodes &mdash; add with a tap</figcaption></figure>
         <figure class="phone"><img src="docs-img/web_settings.png" alt="Settings in the web app"><figcaption>Settings &mdash; including live radio</figcaption></figure>
         <figure class="phone"><img src="docs-img/web_terminal.png" alt="Terminal in the web app"><figcaption>Terminal &mdash; the MeshCore CLI</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="doc" id="web">
+      <h2><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span> Web browser</h2>
+      <div class="row">
+        <div class="prose">
+          <p>WADAMESH can read the web on its own screen. Open the <b>Web</b> app from the home launcher, type an address, and the device fetches the page and shows it as plain, readable text &mdash; articles, wikis, docs, simple sites. There is no proxy in the middle and nothing is tracked: it pulls the page straight from the site and strips it down to the words.</p>
+          <ul>
+            <li><b>Text only</b> &mdash; no JavaScript, no images, no ads. Pages load small and read clean.</li>
+            <li><b>Tappable links</b> &mdash; follow a link to the next page, with <b>back</b>, <b>forward</b> and <b>refresh</b> in the toolbar.</li>
+            <li><b>Direct &amp; private</b> &mdash; the device connects to the site itself over Wi-Fi (HTTPS); no server of ours sees what you read.</li>
+          </ul>
+          <p>Reading the web on-device takes more memory than the smallest board carries, so the Web app is on the <b>T-Deck</b> and <b>Tanmatsu</b>. On the 2&nbsp;MB Heltec&nbsp;V4 it is hidden &mdash; that board can't complete the secure handshake &mdash; but you can still bounce any link to your phone (below).</p>
+        </div>
+        <div class="shot"><div class="device"><img class="screen" src="docs-img/app_web.png" alt="The on-device Web app"></div><div class="cap">Web &mdash; open an address, read it as text</div></div>
+      </div>
+
+      <div class="subh">Links in chat</div>
+      <div class="prose" style="max-width:70ch"><p>A link that arrives in a message is now tappable. Tap it for a small menu: <b>Open in web</b> loads the page in the on-device browser (T-Deck and Tanmatsu), and <b>Create QR</b> puts a scannable QR code on screen so you can open the link on your phone. Create QR works on <em>every</em> board, including the Heltec&nbsp;V4 &mdash; so even where the browser isn't available, a link is one tap from your phone.</p></div>
+      <div class="gallery">
+        <div class="mini"><img src="docs-img/app_web_links.png" alt="Tapping a link in chat opens a menu"><div class="cap">Tap a link &mdash; Open in web, or Create QR</div></div>
+        <div class="mini"><img src="docs-img/app_web_qr.png" alt="A QR code for a link from chat"><div class="cap">Create QR &mdash; scan to open on your phone</div></div>
       </div>
     </section>
 
