@@ -7,6 +7,7 @@
 #include <helpers/BaseSerialInterface.h>
 #include <Arduino.h>
 #include <helpers/sensors/LPPDataHelpers.h>
+#include "installer/PackageInstaller.h"
 
 #ifndef LED_STATE_ON
   #define LED_STATE_ON 1
@@ -239,7 +240,14 @@ private:
 
   void setCurrScreen(UIScreen* c);
 
+
 public:
+
+
+#ifdef ENABLE_DEV_TOOLS
+  // Developer test: Package installer kézi indítása
+  void testInstaller();
+#endif
 
   UITask(mesh::MainBoard* board, BaseSerialInterface* serial)
       : AbstractUITask(board, serial), _display(NULL), _sensors(NULL), _touch_screen(TouchUiScreen::Home) {
