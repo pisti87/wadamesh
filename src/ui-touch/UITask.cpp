@@ -42043,6 +42043,14 @@ void UITask::shutdown(bool restart) {
     _display->endFrame();
   }
 }
+#ifdef ENABLE_DEV_TOOLS
+
+void UITask::testInstaller()
+{
+    tdeck::installer::PackageInstaller installer;
+    installer.checkForUpdates();
+}
+#endif
 
 // ============================================================================
 // Unified popup registry — the ONE table behind anyPopupOpen(), the Esc/red-X
