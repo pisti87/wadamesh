@@ -17,6 +17,7 @@
                                              // (quoted: use wadamesh's src/ copy, not the lib's stale one)
 #include "wadamesh_mark_rgb.h"               // anti-aliased mesh-mark (RGB565) for the pre-LVGL boot screen
 #include "ui-touch/TouchSleep.h"             // idle light-sleep controller (loopEnd called at end of loop())
+#include <installer/PackageTypes.h>
 #endif
 
 // Believe it or not, this std C function is busted on some platforms!
