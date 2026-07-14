@@ -1,110 +1,56 @@
-#include "PackageInstaller.h"
+#pragma once
 
-#include <SD.h>
+#include <Arduino.h>
+
+#include "PackageVerifier.h"
 
 
 namespace tdeck::installer
 {
 
 
-PackageInstaller::PackageInstaller()
+enum class InstallResult
 {
-}
+    Ok,
+    VerificationFailed,
+    SourceMissing,
+    DestinationError,
+    InstallFailed
+};
 
 
 
-InstallResult PackageInstaller::install(
-    const String &packagePath
-)
-{
-
-    VerifyResult result =
-        verifier.verify(packagePath);
-
-
-
-    if (result != VerifyResult::Ok)
-    {
-        return InstallResult::VerificationFailed;
-    }
-
-
-
-    String destination =
-        verifier.getDestination();
-
-
-
-    if (!createDestination(destination))
-    {
-        return InstallResult::DestinationError;
-    }
-
-
-
-    if (!copyPackage(
-            packagePath,
-            destination))
-    {
-        return InstallResult::InstallFailed;
-    }
-
-
-
-    return InstallResult::Ok;
-}
-
-
-
-
-
-bool PackageInstaller::createDestination(
-    const String &path
-)
+class PackageInstaller
 {
 
-    if (SD.exists(path))
-    {
-        return true;
-    }
+public:
+
+    PackageInstaller();
 
 
-    return SD.mkdir(path);
-}
+    InstallResult install(
+        const String &packagePath
+    );
 
 
+private:
+
+    bool createDestination(
+        const String &path
+    );
 
 
-
-bool PackageInstaller::copyPackage(
-    const String &source,
-    const String &destination
-)
-{
-
-    /*
-       Ide kerül majd:
-
-       ZIP extractor
-
-       vagy
-
-       package file copier
+    bool copyPackage(
+        const String &source,
+        const String &destination
+    );
 
 
-       Jelenlegi verzió:
-       csak a struktúrát készíti elő.
-    */
+private:
 
+    PackageVerifier verifier;
 
-    if (!SD.exists(source))
-    {
-        return false;
-    }
-
-
-    return true;
-}
+};
 
 
 }
