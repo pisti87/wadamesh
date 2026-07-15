@@ -3,7 +3,7 @@
 
 // Native language names shown in the picker. Index order == UiLang.
 const char* const kUiLangNames[LANG_COUNT] = {
-  "English", "Nederlands", "Deutsch", "Français", "Español", "Italiano",
+  "English", "Nederlands", "Deutsch", "Magyar", "Français", "Español", "Italiano",
   "Русский", "Українська", "Български", "Српски", "Ελληνικά",
   "Português (BR)",
 };
@@ -23,22 +23,23 @@ uint8_t i18nGetLang() { return s_ui_lang; }
 // frame), so order does not matter and you can append anywhere.
 struct I18nEntry { const char* en; const char* tr[LANG_COUNT]; };
 
-//                                  NL                    DE                     FR                        ES                       IT                          RU                        UK                          BG                         SR                          EL
+//                                  NL                    DE           HU                 FR                        ES                       IT                          RU                        UK                          BG                         SR                          EL
 static const I18nEntry kI18n[] = {
-  { "Profile",        { 0, "Profiel",          "Profil",              "Profil",                 "Perfil",                "Profilo",                  "Профиль",                "Профіль",                  "Профил",                  "Профил",                   "Προφίλ" ,"Perfil"} },
-  { "Radio & Mesh",   { 0, "Radio & Mesh",     "Funk & Mesh",         "Radio et mesh",          "Radio y mesh",          "Radio e mesh",             "Радио и меш",            "Радіо та меш",             "Радио и меш",             "Радио и меш",              "Ράδιο & Mesh" ,"Rádio & Mesh"} },
-  { "Display",        { 0, "Scherm",           "Anzeige",             "Affichage",              "Pantalla",              "Schermo",                  "Экран",                  "Екран",                    "Дисплей",                 "Приказ",                   "Οθόνη" ,"Tela"} },
-  { "Keyboard",       { 0, "Toetsenbord",      "Tastatur",            "Clavier",                "Teclado",               "Tastiera",                 "Клавиатура",             "Клавіатура",               "Клавиатура",              "Тастатура",                "Πληκτρολόγιο" ,"Teclado"} },
-  { "Quick replies",  { 0, "Snelle antwoorden","Schnellantworten",    "Réponses rapides",       "Respuestas rápidas",    "Risposte rapide",          "Быстрые ответы",         "Швидкі відповіді",         "Бързи отговори",          "Брзи одговори",            "Γρήγορες απαντήσεις" ,"Respostas rápidas"} },
-  { "Sound",          { 0, "Geluid",           "Ton",                 "Son",                    "Sonido",                "Suono",                    "Звук",                   "Звук",                     "Звук",                    "Звук",                     "Ήχος" ,"Som"} },
-  { "Lock screen",    { 0, "Vergrendelscherm", "Sperrbildschirm",     "Écran de verrouillage",  "Pantalla de bloqueo",   "Schermata di blocco",      "Экран блокировки",       "Екран блокування",         "Заключен екран",          "Закључани екран",          "Οθόνη κλειδώματος" ,"Tela de bloqueio"} },
-  { "System",         { 0, "Systeem",          "System",              "Système",                "Sistema",               "Sistema",                  "Система",                "Система",                  "Система",                 "Систем",                   "Σύστημα" ,"Sistema"} },
-  { "About",          { 0, "Over",             "Über",                "À propos",               "Acerca de",             "Informazioni",             "О программе",            "Про програму",             "Относно",                 "О програму",               "Σχετικά" ,"Sobre"} },
-  { "Language",       { 0, "Taal",             "Sprache",             "Langue",                 "Idioma",                "Lingua",                   "Язык",                   "Мова",                     "Език",                    "Језик",                    "Γλώσσα" ,"Idioma"} },
-  { "Settings",       { 0, "Instellingen",     "Einstellungen",       "Paramètres",             "Ajustes",               "Impostazioni",             "Настройки",              "Налаштування",             "Настройки",               "Подешавања",               "Ρυθμίσεις" ,"Ajustes"} },
+  { "Profile",        { 0, "Profiel",          "Profil",              "Profil",         "Profil",                 "Perfil",                "Profilo",                  "Профиль",                "Профіль",                  "Профил",                  "Профил",                   "Προφίλ" ,"Perfil"} },
+  { "Radio & Mesh",   { 0, "Radio & Mesh",     "Funk & Mesh",         "Rádió és mesh",  "Radio et mesh",          "Radio y mesh",          "Radio e mesh",             "Радио и меш",            "Радіо та меш",             "Радио и меш",             "Радио и меш",              "Ράδιο & Mesh" ,"Rádio & Mesh"} },
+  { "Display",        { 0, "Scherm",           "Anzeige",             "Kijelző",        "Affichage",              "Pantalla",              "Schermo",                  "Экран",                  "Екран",                    "Дисплей",                 "Приказ",                   "Οθόνη" ,"Tela"} },
+  { "Keyboard",       { 0, "Toetsenbord",      "Tastatur",            "Billentyűzet",   "Clavier",                "Teclado",               "Tastiera",                 "Клавиатура",             "Клавіатура",               "Клавиатура",              "Тастатура",                "Πληκτρολόγιο" ,"Teclado"} },
+  { "Quick replies",  { 0, "Snelle antwoorden","Schnellantworten",    "Gyors válaszok", "Réponses rapides",       "Respuestas rápidas",    "Risposte rapide",          "Быстрые ответы",         "Швидкі відповіді",         "Бързи отговори",          "Брзи одговори",            "Γρήγορες απαντήσεις" ,"Respostas rápidas"} },
+  { "Sound",          { 0, "Geluid",           "Ton",                 "Hang",           "Son",                    "Sonido",                "Suono",                    "Звук",                   "Звук",                     "Звук",                    "Звук",                     "Ήχος" ,"Som"} },
+  { "Lock screen",    { 0, "Vergrendelscherm", "Sperrbildschirm",     "Képernyőzár",    "Écran de verrouillage",  "Pantalla de bloqueo",   "Schermata di blocco",      "Экран блокировки",       "Екран блокування",         "Заключен екран",          "Закључани екран",          "Οθόνη κλειδώματος" ,"Tela de bloqueio"} },
+  { "System",         { 0, "Systeem",          "System",              "Rendszer",       "Système",                "Sistema",               "Sistema",                  "Система",                "Система",                  "Система",                 "Систем",                   "Σύστημα" ,"Sistema"} },
+  { "About",          { 0, "Over",             "Über",                "About",          "À propos",               "Acerca de",             "Informazioni",             "О программе",            "Про програму",             "Относно",                 "О програму",               "Σχετικά" ,"Sobre"} },
+  { "Language",       { 0, "Taal",             "Sprache",             "Nyelv",          "Langue",                 "Idioma",                "Lingua",                   "Язык",                   "Мова",                     "Език",                    "Језик",                    "Γλώσσα" ,"Idioma"} },
+  { "Settings",       { 0, "Instellingen",     "Einstellungen",       "Beállítások",    "Paramètres",             "Ajustes",               "Impostazioni",             "Настройки",              "Налаштування",             "Настройки",               "Подешавања",               "Ρυθμίσεις" ,"Ajustes"} },
   { "Tap a language; the device reboots to apply.",
                       { 0, "Tik op een taal; het apparaat herstart.",
                            "Sprache antippen; Gerät startet neu.",
+                           "Érintsen meg egy nyelvet; az eszköz.",
                            "Touchez une langue ; l'appareil redémarre.",
                            "Toca un idioma; el dispositivo se reinicia.",
                            "Tocca una lingua; il dispositivo si riavvia.",
@@ -49,7 +50,7 @@ static const I18nEntry kI18n[] = {
                            "Πατήστε μια γλώσσα· η συσκευή επανεκκινεί." ,"Toque num idioma; o aparelho reinicia para aplicar."} },
 
   // ---- Settings detail pages (sweep pass 1: Display / Keyboard / Sound / System) ----
-  { "Save", { 0, "Opslaan","Speichern","Enregistrer","Guardar","Salva","Сохранить","Зберегти","Запази","Сачувај","Αποθήκευση" ,"Salvar"} },
+  { "Save", { 0, "Opslaan","Speichern","Mentés","Enregistrer","Guardar","Salva","Сохранить","Зберегти","Запази","Сачувај","Αποθήκευση" ,"Salvar"} },
   { "Toggle GPS", { 0, "GPS aan/uit","GPS umschalten","GPS activer/désactiver","Alternar GPS","Attiva/disattiva GPS","Переключить GPS","Перемкнути GPS","Превключи GPS","Укључи/искључи GPS","Εναλλαγή GPS" ,"Alternar GPS"} },
   { "GPS serial baud", { 0, "GPS seriële baud","GPS-Baudrate","Débit série GPS","Baudios serie GPS","Baud seriale GPS","Скорость GPS (бод)","Швидкість GPS (бод)","GPS сериен baud","GPS серијски baud","GPS σειριακό baud" ,"Baud serial do GPS"} },
   { "Sync clock from system", { 0, "Klok synchroniseren","Uhr synchronisieren","Synchroniser l'horloge","Sincronizar reloj","Sincronizza orologio","Синхронизировать часы","Синхронізувати годинник","Синхронизирай часовника","Синхронизуј сат","Συγχρονισμός ρολογιού" ,"Sincronizar relógio do sistema"} },
