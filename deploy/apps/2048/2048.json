@@ -1,0 +1,10 @@
+{
+  "id": "2048",
+  "name": "2048",
+  "ver": "1.1",
+  "cat": "games",
+  "author": "WADAMESH Community (pisti87)",
+  "desc": "This game is 2048",
+  "main": "2048.lua",
+  "icon": "2048.png"
+}
