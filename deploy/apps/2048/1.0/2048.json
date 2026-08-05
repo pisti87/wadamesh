@@ -1,0 +1,8 @@
+{
+"name": "2048",
+"version": "1.0",
+"author": "WADAMESH Community (pisti87)",
+"description": "Classic 2048 puzzle game",
+"main": "2048.lua",
+"icon": "icon.png"
+}
