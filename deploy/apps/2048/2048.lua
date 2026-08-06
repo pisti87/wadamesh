@@ -1,4 +1,4 @@
--- 2048 — wada.* reference app
+-- 2048 — wadamesh Created by pisti87
 -- Swipe (or trackball mapped swipe) to move tiles.
 -- Tap after game over to restart.
 
@@ -55,6 +55,22 @@ function history:save()
 end
 
 
+function history:revert()
+
+  if #self.grids > 0 then
+
+    local old = table.remove(self.grids)
+
+
+    grid = old.grid
+    score = old.score
+    over = old.over
+
+  end
+
+end
+
+
 --------------------------------------------------
 -- Game logic
 --------------------------------------------------
@@ -87,17 +103,23 @@ local function add_random_tile()
 
 
   if #free==0 then
-    return
-  end
+  return
+end
 
 
-  local p=free[sys.random(1,#free)]
+local index = sys.random(1,#free)
+local p = free[index]
 
-  if sys.random(0,9)==0 then
-    grid[p.x][p.y]=4
-  else
-    grid[p.x][p.y]=2
-  end
+if p == nil then
+  return
+end
+
+
+if sys.random(0,9)==0 then
+  grid[p.x][p.y]=4
+else
+  grid[p.x][p.y]=2
+end
 
 end
 
@@ -264,17 +286,6 @@ local function move(dir)
     rotate()
 
 
-  elseif dir=="down" then
-
-    rotate()
-    rotate()
-    rotate()
-
-    changed=move_left()
-
-    rotate()
-
-
   elseif dir=="up" then
 
     rotate()
@@ -285,7 +296,18 @@ local function move(dir)
     rotate()
     rotate()
 
-  end
+
+elseif dir=="down" then
+
+    rotate()
+    rotate()
+    rotate()
+
+    changed=move_left()
+
+    rotate()
+
+end
 
 
   if changed then
@@ -341,7 +363,59 @@ local function scoreline()
 
 end
 
+local function tile_color(v)
 
+  if v == 0 then
+    return 0xCDC1B4
+
+  elseif v == 2 then
+    return 0xEEE4DA
+
+  elseif v == 4 then
+    return 0xEDE0C8
+
+  elseif v == 8 then
+    return 0xF2B179
+
+  elseif v == 16 then
+    return 0xF59563
+
+  elseif v == 32 then
+    return 0xF67C5F
+
+  elseif v == 64 then
+    return 0xF65E3B
+
+  elseif v == 128 then
+    return 0xEDCF72
+
+  elseif v == 256 then
+    return 0xEDCC61
+
+  elseif v == 512 then
+    return 0xEDC850
+
+  elseif v == 1024 then
+    return 0xEDC53F
+
+  elseif v == 2048 then
+    return 0xEDC22E
+
+  end
+
+  return 0x3C3A32
+
+end
+
+local function text_color(v)
+
+  if v <= 4 then
+    return 0x776E65
+  else
+    return 0xFFFFFF
+  end
+
+end
 
 local function draw()
 
@@ -354,18 +428,18 @@ local function draw()
       local px=(x-1)*CELL
       local py=(y-1)*CELL
 
-      cv:rect(
-        px+2,
-        py+2,
-        CELL-4,
-        CELL-4,
-        C.good,
-        true,
-        4
-      )
+      local v = grid[x][y]
 
+cv:rect(
+  px+2,
+  py+2,
+  CELL-4,
+  CELL-4,
+  tile_color(v),
+  true,
+  4
+)
 
-      local v=grid[x][y]
 
       if v>0 then
 
@@ -373,7 +447,7 @@ local function draw()
           px+10,
           py+10,
           tostring(v),
-          C.text,
+          text_color(v),
           16
         )
 
