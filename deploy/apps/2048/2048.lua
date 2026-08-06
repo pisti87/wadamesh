@@ -1,4 +1,5 @@
--- 2048 — wadamesh Created by pisti87
+Vizsgald meg a fel es le mozgatast mivel ez szerintem forditva mukodik
+-- 2048 — wada.* reference app
 -- Swipe (or trackball mapped swipe) to move tiles.
 -- Tap after game over to restart.
 
@@ -13,8 +14,8 @@ local CELL = 38
 
 local grid = {}
 local history = {
-  grids = {},
-  maxsize = 5
+grids = {},
+maxsize = 5
 }
 
 local px_w, px_h
@@ -22,534 +23,412 @@ local score = 0
 local hiscore = 0
 local over = false
 
---------------------------------------------------
+
+---
+
 -- History
---------------------------------------------------
 
 function history:save()
+local old = {}
 
-  local old = {
-    grid = {},
-    score = score,
-    over = over
-  }
-
-
-  for x = 1,4 do
-    old.grid[x] = {}
-
-    for y = 1,4 do
-      old.grid[x][y] = grid[x][y]
-    end
-
-  end
-
-
-  table.insert(self.grids, old)
-
-
-  if #self.grids > self.maxsize then
-    table.remove(self.grids,1)
-  end
-
+for x = 1,4 do
+old[x] = {}
+for y = 1,4 do
+old[x][y] = grid[x][y]
+end
 end
 
+table.insert(self.grids, old)
+
+if #self.grids > self.maxsize then
+table.remove(self.grids,1)
+end
+end
 
 function history:revert()
-
-  if #self.grids > 0 then
-
-    local old = table.remove(self.grids)
-
-
-    grid = old.grid
-    score = old.score
-    over = old.over
-
-  end
-
+if #self.grids > 0 then
+grid = table.remove(self.grids)
+end
 end
 
 
---------------------------------------------------
+---
+
 -- Game logic
---------------------------------------------------
 
 local function clear_grid()
 
-  grid = {}
+grid = {}
 
-  for x=1,4 do
-    grid[x]={}
-    for y=1,4 do
-      grid[x][y]=0
-    end
-  end
-
+for x=1,4 do
+grid[x]={}
+for y=1,4 do
+grid[x][y]=0
+end
 end
 
+end
 
 local function add_random_tile()
 
-  local free={}
+local free={}
 
-  for x=1,4 do
-    for y=1,4 do
-      if grid[x][y]==0 then
-        table.insert(free,{x=x,y=y})
-      end
-    end
-  end
-
-
-  if #free==0 then
-  return
+for x=1,4 do
+for y=1,4 do
+if grid[x][y]==0 then
+table.insert(free,{x=x,y=y})
+end
+end
 end
 
-
-local index = sys.random(1,#free)
-local p = free[index]
-
-if p == nil then
-  return
+if #free==0 then
+return
 end
 
+local p=free[sys.random(1,#free)]
 
 if sys.random(0,9)==0 then
-  grid[p.x][p.y]=4
+grid[p.x][p.y]=4
 else
-  grid[p.x][p.y]=2
+grid[p.x][p.y]=2
 end
 
 end
-
-
 
 local function reset()
 
-  clear_grid()
+clear_grid()
 
-  score=0
-  over=false
+score=0
+over=false
 
-  history.grids={}
+history.grids={}
 
-  add_random_tile()
-  add_random_tile()
+add_random_tile()
+add_random_tile()
 
 end
-
-
 
 local function compress(line)
 
-  local r={}
+local r={}
 
-  for i=1,4 do
-    if line[i]~=0 then
-      table.insert(r,line[i])
-    end
-  end
-
-  while #r<4 do
-    table.insert(r,0)
-  end
-
-  return r
-
+for i=1,4 do
+if line[i]~=0 then
+table.insert(r,line[i])
+end
 end
 
+while #r<4 do
+table.insert(r,0)
+end
 
+return r
+
+end
 
 local function merge(line)
 
-  local r={}
-  local i=1
+local r={}
+local i=1
 
-  while i<=4 do
+while i<=4 do
 
-    if line[i]~=0 and line[i]==line[i+1] then
+if line[i]~=0 and line[i]==line[i+1] then  
 
-      local v=line[i]*2
+  local v=line[i]*2  
 
-      table.insert(r,v)
+  table.insert(r,v)  
 
-      score=score+v
+  score=score+v  
 
-      if score>hiscore then
-        hiscore=score
-        store.set("2048_best",hiscore)
-      end
+  if score>hiscore then  
+    hiscore=score  
+    store.set("2048_best",hiscore)  
+  end  
 
-      i=i+2
+  i=i+2  
 
-    else
+else  
 
-      table.insert(r,line[i])
-      i=i+1
-
-    end
-
-  end
-
-
-  while #r<4 do
-    table.insert(r,0)
-  end
-
-
-  return r
+  table.insert(r,line[i])  
+  i=i+1  
 
 end
 
+end
 
+while #r<4 do
+table.insert(r,0)
+end
+
+return r
+
+end
 
 local function move_left()
 
-  local changed=false
+local changed=false
+
+for y=1,4 do
+
+local old={}  
+local line={}  
+
+for x=1,4 do  
+  old[x]=grid[x][y]  
+  line[x]=grid[x][y]  
+end  
 
 
-  for y=1,4 do
-
-    local old={}
-    local line={}
-
-    for x=1,4 do
-      old[x]=grid[x][y]
-      line[x]=grid[x][y]
-    end
+line=compress(line)  
+line=merge(line)  
 
 
-    line=compress(line)
-    line=merge(line)
+for x=1,4 do  
+  grid[x][y]=line[x]  
 
-
-    for x=1,4 do
-      grid[x][y]=line[x]
-
-      if old[x]~=line[x] then
-        changed=true
-      end
-    end
-
-  end
-
-
-  return changed
+  if old[x]~=line[x] then  
+    changed=true  
+  end  
+end
 
 end
 
+return changed
 
+end
 
 local function rotate()
 
-  local n={}
+local n={}
 
-  for x=1,4 do
-    n[x]={}
-  end
-
-
-  for x=1,4 do
-    for y=1,4 do
-      n[y][5-x]=grid[x][y]
-    end
-  end
-
-
-  grid=n
-
+for x=1,4 do
+n[x]={}
 end
 
+for x=1,4 do
+for y=1,4 do
+n[y][5-x]=grid[x][y]
+end
+end
 
+grid=n
+
+end
 
 local function move(dir)
 
-  history:save()
+history:save()
 
-  local changed=false
+local changed=false
 
+if dir=="left" then
 
-  if dir=="left" then
+changed=move_left()
 
-    changed=move_left()
+elseif dir=="right" then
 
+rotate()  
+rotate()  
 
-  elseif dir=="right" then
+changed=move_left()  
 
-    rotate()
-    rotate()
-
-    changed=move_left()
-
-    rotate()
-    rotate()
-
-
-  elseif dir=="up" then
-
-    rotate()
-
-    changed=move_left()
-
-    rotate()
-    rotate()
-    rotate()
-
+rotate()  
+rotate()
 
 elseif dir=="down" then
 
-    rotate()
-    rotate()
-    rotate()
+rotate()  
+rotate()  
+rotate()  
 
-    changed=move_left()
+changed=move_left()  
 
-    rotate()
+rotate()
+
+elseif dir=="up" then
+
+rotate()  
+
+changed=move_left()  
+
+rotate()  
+rotate()  
+rotate()
 
 end
 
-
-  if changed then
-    add_random_tile()
-  else
-    history:revert()
-  end
-
+if changed then
+add_random_tile()
+else
+history:revert()
 end
 
-
+end
 
 local function game_over()
 
-  for x=1,4 do
-    for y=1,4 do
+for x=1,4 do
+for y=1,4 do
 
-      if grid[x][y]==0 then
-        return false
-      end
+if grid[x][y]==0 then  
+    return false  
+  end  
 
-      if x<4 and grid[x][y]==grid[x+1][y] then
-        return false
-      end
+  if x<4 and grid[x][y]==grid[x+1][y] then  
+    return false  
+  end  
 
-      if y<4 and grid[x][y]==grid[x][y+1] then
-        return false
-      end
+  if y<4 and grid[x][y]==grid[x][y+1] then  
+    return false  
+  end  
 
-    end
-  end
+end
 
+end
 
-  return true
+return true
 
 end
 
 
---------------------------------------------------
+---
+
 -- Drawing
---------------------------------------------------
 
 local function scoreline()
 
-  score_lbl:set(
-    string.format(
-      "Score %d   Best %d%s",
-      score,
-      hiscore,
-      over and "   - tap retry" or ""
-    )
-  )
-
-end
-
-local function tile_color(v)
-
-  if v == 0 then
-    return 0xCDC1B4
-
-  elseif v == 2 then
-    return 0xEEE4DA
-
-  elseif v == 4 then
-    return 0xEDE0C8
-
-  elseif v == 8 then
-    return 0xF2B179
-
-  elseif v == 16 then
-    return 0xF59563
-
-  elseif v == 32 then
-    return 0xF67C5F
-
-  elseif v == 64 then
-    return 0xF65E3B
-
-  elseif v == 128 then
-    return 0xEDCF72
-
-  elseif v == 256 then
-    return 0xEDCC61
-
-  elseif v == 512 then
-    return 0xEDC850
-
-  elseif v == 1024 then
-    return 0xEDC53F
-
-  elseif v == 2048 then
-    return 0xEDC22E
-
-  end
-
-  return 0x3C3A32
-
-end
-
-local function text_color(v)
-
-  if v <= 4 then
-    return 0x776E65
-  else
-    return 0xFFFFFF
-  end
+score_lbl:set(
+string.format(
+"Score %d   Best %d%s",
+score,
+hiscore,
+over and "   - tap retry" or ""
+)
+)
 
 end
 
 local function draw()
 
-  cv:fill(0x101418)
+cv:fill(0x101418)
+
+for x=1,4 do
+for y=1,4 do
+
+local px=(x-1)*CELL  
+  local py=(y-1)*CELL  
+
+  cv:rect(  
+    px+2,  
+    py+2,  
+    CELL-4,  
+    CELL-4,  
+    C.good,  
+    true,  
+    4  
+  )  
 
 
-  for x=1,4 do
-    for y=1,4 do
+  local v=grid[x][y]  
 
-      local px=(x-1)*CELL
-      local py=(y-1)*CELL
+  if v>0 then  
 
-      local v = grid[x][y]
+    cv:text(  
+      px+10,  
+      py+10,  
+      tostring(v),  
+      C.text,  
+      16  
+    )  
 
-cv:rect(
-  px+2,
-  py+2,
-  CELL-4,
-  CELL-4,
-  tile_color(v),
-  true,
-  4
+  end  
+
+end
+
+end
+
+if over then
+cv:text(
+30,
+px_h/2,
+"GAME OVER",
+C.bad,
+18
 )
-
-
-      if v>0 then
-
-        cv:text(
-          px+10,
-          py+10,
-          tostring(v),
-          text_color(v),
-          16
-        )
-
-      end
-
-    end
-  end
-
-
-  if over then
-    cv:text(
-      30,
-      px_h/2,
-      "GAME OVER",
-      C.bad,
-      18
-    )
-  end
+end
 
 end
 
 
+---
 
---------------------------------------------------
 -- WADAMESH API
---------------------------------------------------
 
 function app.on_open(w,h)
 
-  hiscore=store.get("2048_best",0)
+hiscore=store.get("2048_best",0)
 
-  px_w=CELL*4
-  px_h=CELL*4
+px_w=CELL4
+px_h=CELL4
 
+score_lbl=ui.label(
+"",
+4,
+4,
+14,
+C.text
+)
 
-  score_lbl=ui.label(
-    "",
-    4,
-    4,
-    14,
-    C.text
-  )
+cv=ui.canvas(px_w,px_h)
 
+cv:pos(
+math.floor((w-px_w)/2),
+28
+)
 
-  cv=ui.canvas(px_w,px_h)
+reset()
 
-  cv:pos(
-    math.floor((w-px_w)/2),
-    28
-  )
+scoreline()
+draw()
 
-
-  reset()
-
-  scoreline()
-  draw()
-
-  timer.every(100)
+timer.every(100)
 
 end
-
-
 
 function app.on_input(ev)
 
+if ev.type=="swipe" then
 
-  if ev.type=="swipe" then
-
-    move(ev.dir)
-
-
-    if game_over() then
-      over=true
-    end
+move(ev.dir)  
 
 
-    scoreline()
-    draw()
+if game_over() then  
+  over=true  
+end  
 
 
-  elseif ev.type=="down" and over then
+scoreline()  
+draw()
 
-    reset()
+elseif ev.type=="down" and over then
 
-    scoreline()
-    draw()
+reset()  
 
-  end
+scoreline()  
+draw()
 
 end
 
-
+end
 
 function app.on_tick(dt)
 
 end
 
-
-
 function app.on_close()
 
 end
-
 
 return app
