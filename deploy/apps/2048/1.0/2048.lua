@@ -27,27 +27,47 @@ local over = false
 --------------------------------------------------
 
 function history:save()
-  local old = {}
+
+  local old = {
+    grid = {},
+    score = score,
+    over = over
+  }
+
 
   for x = 1,4 do
-    old[x] = {}
+    old.grid[x] = {}
+
     for y = 1,4 do
-      old[x][y] = grid[x][y]
+      old.grid[x][y] = grid[x][y]
     end
+
   end
 
+
   table.insert(self.grids, old)
+
 
   if #self.grids > self.maxsize then
     table.remove(self.grids,1)
   end
+
 end
 
 
 function history:revert()
+
   if #self.grids > 0 then
-    grid = table.remove(self.grids)
+
+    local old = table.remove(self.grids)
+
+
+    grid = old.grid
+    score = old.score
+    over = old.over
+
   end
+
 end
 
 
@@ -83,17 +103,23 @@ local function add_random_tile()
 
 
   if #free==0 then
-    return
-  end
+  return
+end
 
 
-  local p=free[sys.random(1,#free)]
+local index = sys.random(1,#free)
+local p = free[index]
 
-  if sys.random(0,9)==0 then
-    grid[p.x][p.y]=4
-  else
-    grid[p.x][p.y]=2
-  end
+if p == nil then
+  return
+end
+
+
+if sys.random(0,9)==0 then
+  grid[p.x][p.y]=4
+else
+  grid[p.x][p.y]=2
+end
 
 end
 
@@ -142,32 +168,32 @@ local function merge(line)
 
   while i<=4 do
 
-    if line[i]~=0 and line[i]==line[i+1] then
+    if i < 4 and line[i] ~= 0 and line[i] == line[i+1] then
 
-      local v=line[i]*2
+      local v = line[i] * 2
 
       table.insert(r,v)
 
-      score=score+v
+      score = score + v
 
-      if score>hiscore then
-        hiscore=score
-        store.set("2048_best",hiscore)
+      if score > hiscore then
+        hiscore = score
+        store.set("2048_best", hiscore)
       end
 
-      i=i+2
+      i = i + 2
 
     else
 
       table.insert(r,line[i])
-      i=i+1
+      i = i + 1
 
     end
 
   end
 
 
-  while #r<4 do
+  while #r < 4 do
     table.insert(r,0)
   end
 
@@ -196,7 +222,7 @@ local function move_left()
 
     line=compress(line)
     line=merge(line)
-
+    line=compress(line)
 
     for x=1,4 do
       grid[x][y]=line[x]
@@ -235,7 +261,7 @@ local function rotate()
 
 end
 
-
+local game_over
 
 local function move(dir)
 
@@ -263,17 +289,6 @@ local function move(dir)
   elseif dir=="up" then
 
     rotate()
-    rotate()
-    rotate()
-
-    changed=move_left()
-
-    rotate()
-
-
-  elseif dir=="down" then
-
-    rotate()
 
     changed=move_left()
 
@@ -281,20 +296,42 @@ local function move(dir)
     rotate()
     rotate()
 
-  end
+
+elseif dir=="down" then
+
+    rotate()
+    rotate()
+    rotate()
+
+    changed=move_left()
+
+    rotate()
+
+end
 
 
   if changed then
-    add_random_tile()
-  else
-    history:revert()
+
+  add_random_tile()
+
+  if game_over() then
+    over = true
   end
+
+else
+
+  history:revert()
+
+end
 
 end
 
 
 
-local function game_over()
+
+-- Game end
+
+game_over = function()
 
   for x=1,4 do
     for y=1,4 do
@@ -337,7 +374,59 @@ local function scoreline()
 
 end
 
+local function tile_color(v)
 
+  if v == 0 then
+    return 0xCDC1B4
+
+  elseif v == 2 then
+    return 0xEEE4DA
+
+  elseif v == 4 then
+    return 0xEDE0C8
+
+  elseif v == 8 then
+    return 0xF2B179
+
+  elseif v == 16 then
+    return 0xF59563
+
+  elseif v == 32 then
+    return 0xF67C5F
+
+  elseif v == 64 then
+    return 0xF65E3B
+
+  elseif v == 128 then
+    return 0xEDCF72
+
+  elseif v == 256 then
+    return 0xEDCC61
+
+  elseif v == 512 then
+    return 0xEDC850
+
+  elseif v == 1024 then
+    return 0xEDC53F
+
+  elseif v == 2048 then
+    return 0xEDC22E
+
+  end
+
+  return 0x3C3A32
+
+end
+
+local function text_color(v)
+
+  if v <= 4 then
+    return 0x776E65
+  else
+    return 0xFFFFFF
+  end
+
+end
 
 local function draw()
 
@@ -350,18 +439,18 @@ local function draw()
       local px=(x-1)*CELL
       local py=(y-1)*CELL
 
-      cv:rect(
-        px+2,
-        py+2,
-        CELL-4,
-        CELL-4,
-        C.good,
-        true,
-        4
-      )
+      local v = grid[x][y]
 
+cv:rect(
+  px+2,
+  py+2,
+  CELL-4,
+  CELL-4,
+  tile_color(v),
+  true,
+  4
+)
 
-      local v=grid[x][y]
 
       if v>0 then
 
@@ -369,7 +458,7 @@ local function draw()
           px+10,
           py+10,
           tostring(v),
-          C.text,
+          text_color(v),
           16
         )
 
@@ -399,71 +488,35 @@ end
 
 function app.on_open(w,h)
 
-  hiscore=store.get("2048_best",0)
 
-  px_w=CELL*4
-  px_h=CELL*4
+  load_alarm()
 
 
-  score_lbl=ui.label(
-    "",
-    4,
-    4,
-    14,
-    C.text
+  cv=ui.canvas(
+    w,
+    h
   )
 
-
-  cv=ui.canvas(px_w,px_h)
 
   cv:pos(
-    math.floor((w-px_w)/2),
-    28
+    0,
+    0
   )
 
 
-  reset()
-
-  scoreline()
   draw()
 
-  timer.every(100)
 
-end
-
-
-
-function app.on_input(ev)
-
-
-  if ev.type=="swipe" then
-
-    move(ev.dir)
-
-
-    if game_over() then
-      over=true
-    end
-
-
-    scoreline()
-    draw()
-
-
-  elseif ev.type=="down" and over then
-
-    reset()
-
-    scoreline()
-    draw()
-
-  end
+  timer.every(1000)
 
 end
 
 
 
 function app.on_tick(dt)
+
+  check_alarm()
+  draw()
 
 end
 
