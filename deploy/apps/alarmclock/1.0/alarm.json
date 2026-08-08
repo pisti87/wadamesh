@@ -1,9 +1,0 @@
-{
-  "id": "alarmclock",
-  "name": "alarmclock",
-  "ver": "1.0",
-  "cat": "utility",
-  "author": "WADAMESH Community (pisti87)",
-  "desc": "Alarmclock",
-  "main": "alarmclock.lua",
-}
