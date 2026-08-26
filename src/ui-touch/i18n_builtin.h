@@ -386,6 +386,7 @@ static const I18nPair kBuiltin_hu[] = {
   { "Install", "Telepít" },
   { "Install a previous version", "Telepítse az előző verziót" },
   { "Install an earlier version", "Telepítse egy korábbi verziót" },
+  { "Install beta_%d?\nThis downgrades the firmware and reboots.", "Beta_%d telepítése?\nEz visszaállítja a firmware-t és újraindítja az eszközt." },
   { "Install failed (network?)", "A telepítés nem sikerült (hálózat?)" },
   { "Install update", "Frissítés telepítése" },
   { "Installed", "Telepítve" },
